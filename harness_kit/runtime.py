@@ -679,6 +679,10 @@ def cmd_unblock(h: Harness, args) -> int:
         raise SystemExit(f"ERROR: {f['id']} is not blocked.")
     f["status"] = "not_started"
     f.pop("blocked_reason", None)
+    # a fresh start: the next activation records a new base commit (a stale one made every later commit look like
+    # scope drift to `loop` — found building harness-tutorial, 2026-10-15)
+    f.pop("activated_commit", None)
+    f.pop("activated_at", None)
     h.save_features(feats)
     h.trace("unblock", "ok", feature=f["id"])
     print(f"{f['id']} → not_started.")
@@ -1746,7 +1750,8 @@ def _loop_drift(h: Harness, f: dict) -> list[str]:
     if not scope:
         return []
     allowed = scope + list(h.cfg.get("scope_exempt", [])) + _harness_paths(h)
-    names = set(h.git("diff", "--name-only", f.get("activated_commit") or "HEAD").splitlines())
+    base = f.get("activated_commit") if f.get("status") == "active" else None  # not started yet: compare with HEAD
+    names = set(h.git("diff", "--name-only", base or "HEAD").splitlines())
     names |= {r for r in h.git("ls-files", "--others", "--exclude-standard").splitlines()
               if not any(part in SKIP_DIRS or part in IDE_DIRS for part in r.split("/")[:-1])}
     return sorted(n for n in names if n and not any(fnmatch.fnmatch(n, g) for g in allowed))

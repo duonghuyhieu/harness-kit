@@ -974,6 +974,21 @@ class LoopTests(unittest.TestCase):
         self.assertEqual(self.feature()["status"], "passing")
         self.assertNotIn("INTEGRITY", out)
 
+    def test_unblocked_feature_is_not_judged_against_its_old_base(self):
+        """Found building harness-tutorial (2026-10-15): after block/unblock, commits made in between (e.g. a fixed
+        check script) were reported as scope drift because the stale activation commit was kept."""
+        run_rt(self.root, "next", "--id", "X1")
+        run_rt(self.root, "block", "X1", "--reason", "harness bug")
+        (self.root / "README.md").write_text("fixed the harness\n", encoding="utf-8")  # outside X1's scope
+        git(self.root, "add", "-A")
+        git(self.root, "commit", "-qm", "fix harness while X1 is blocked")
+        run_rt(self.root, "unblock", "X1")
+        self.assertNotIn("activated_commit", self.feature())
+        code, out = self.loop({"maker": [MAKER_OK], "reviewer": [REVIEW_PASS]})
+        self.assertEqual(code, 0, out)
+        self.assertNotIn("outside its scope", out)
+        self.assertEqual(self.feature()["status"], "passing")
+
     def test_reviewer_feedback_reaches_next_maker_round(self):
         code, out = self.loop({"maker": [MAKER_OK], "reviewer": [REVIEW_FAIL, REVIEW_PASS]})
         self.assertEqual(code, 0, out)
