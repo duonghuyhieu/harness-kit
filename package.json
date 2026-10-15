@@ -1,0 +1,29 @@
+{
+  "name": "harness-engineering-kit",
+  "version": "2.0.0",
+  "description": "Harness engineering for coding agents: installs a verified-work harness (AGENTS.md, feature list with a pass-gate, PROGRESS handoffs, runtime checks) plus a Claude Code layer (.claude/ agents, /hk-* skills, hooks, status line).",
+  "bin": {
+    "harness": "bin/cli.js",
+    "harness-kit": "bin/cli.js"
+  },
+  "files": [
+    "bin/",
+    "harness.py",
+    "harness_kit/",
+    "skills/",
+    "README.md",
+    "docs/HUONG-DAN.md"
+  ],
+  "scripts": {
+    "test": "python -m unittest discover -s tests -t . -q"
+  },
+  "keywords": ["claude-code", "harness-engineering", "coding-agents", "agents-md", "hooks", "skills"],
+  "author": "Duong Huy Hieu",
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/duonghuyhieu/harness.git"
+  },
+  "engines": {
+    "node": ">=18"
+  }
+}

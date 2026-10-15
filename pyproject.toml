@@ -1,0 +1,19 @@
+[build-system]
+requires = ["setuptools>=68"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "harness-kit"
+version = "2.0.0"
+description = "Retrofit legacy projects with a harness-engineering structure (AGENTS.md, feature list, pass-gate, clean state)."
+requires-python = ">=3.10"
+dependencies = []
+
+[project.scripts]
+harness = "harness_kit.cli:main"
+
+[tool.setuptools]
+packages = ["harness_kit"]
+
+[tool.setuptools.package-data]
+harness_kit = ["templates/**/*", "templates/*"]

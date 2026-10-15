@@ -1,0 +1,45 @@
+{
+  "_doc": "Machine-checkable architecture rules. include/exclude use fnmatch on relative POSIX paths. severity=error fails check; warn only warns. Recurring review findings -> add a rule here.",
+  "rules": [
+    {
+      "id": "R100",
+      "description": "runtime.py must stay standalone (no harness_kit imports)",
+      "severity": "error",
+      "include": [
+        "harness_kit/runtime.py"
+      ],
+      "exclude": [],
+      "pattern": "^\\s*(from\\s+(\\.|harness_kit)|import\\s+harness_kit)",
+      "why": "runtime.py is copied verbatim into target projects as scripts/harness.py, where harness_kit does not exist.",
+      "fix": "Inline the helper into runtime.py (stdlib only), or move the logic to the kit side (audit/scaffold)."
+    },
+    {
+      "id": "R001",
+      "description": "Hard-coded secret in code",
+      "severity": "warn",
+      "include": [
+        "*.py",
+        "*.js",
+        "*.jsx",
+        "*.ts",
+        "*.tsx",
+        "*.java",
+        "*.kt",
+        "*.go",
+        "*.cs",
+        "*.php",
+        "*.rb",
+        "*.rs"
+      ],
+      "exclude": [
+        "*test*",
+        "*spec*",
+        "*example*",
+        "*fixture*"
+      ],
+      "pattern": "(?i)\\b(api[_-]?key|secret|passwd|password|access[_-]?token)\\b\\s*[:=]\\s*['\\\"][A-Za-z0-9_\\-/+=]{12,}['\\\"]",
+      "why": "Secrets in code leak through git, logs and build artifacts.",
+      "fix": "Read from environment variables / a secret manager; add the key (without a value) to .env.example."
+    }
+  ]
+}

@@ -1,0 +1,5 @@
+# harness-kit: pin line endings so the boot scripts run regardless of core.autocrlf
+*.sh text eol=lf
+scripts/harness.py text eol=lf
+*.ps1 text eol=crlf
+*.js text eol=lf

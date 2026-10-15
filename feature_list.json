@@ -1,0 +1,704 @@
+{
+  "project": "harness",
+  "last_updated": "2026-10-15",
+  "rules": {
+    "single_active_feature": true,
+    "passing_requires_evidence": true,
+    "status_changes_only_via": "python scripts/harness.py next|verify|block|unblock"
+  },
+  "status_legend": {
+    "not_started": "Not started.",
+    "active": "In progress (at most 1).",
+    "blocked": "Blocked, with a recorded reason.",
+    "passing": "Verification passed, with evidence."
+  },
+  "features": [
+    {
+      "id": "H001",
+      "priority": 1,
+      "category": "harness",
+      "behavior": "Verification baseline runs from a clean checkout: `./init.sh` completes setup and `check` passes (fix the commands in .harness/config.json if detection was wrong).",
+      "verification": "python scripts/harness.py check",
+      "status": "passing",
+      "depends_on": [],
+      "evidence": {
+        "verified_at": "2026-10-07T23:37:13+07:00",
+        "commit": null,
+        "command": "python scripts/harness.py check",
+        "exit_code": 0,
+        "duration_s": 21.4,
+        "project_check": "quick",
+        "output_tail": "   WARNING: docs/DECISIONS.md still has 1 unfilled `HARNESS:FILL` placeholder(s).\n   WARNING: docs/PRODUCT.md still has 3 unfilled `HARNESS:FILL` placeholder(s).\n   WARNING: docs/QUALITY.md still has 1 unfilled `HARNESS:FILL` placeholder(s).\n   WARNING: docs/RELIABILITY.md still has 2 unfilled `HARNESS:FILL` placeholder(s).\n[PASS] lint (0.4s)\n[SKIP] typecheck: not configured in .harness/config.json\n[PASS] test (20.5s)\n== RESULT: PASS =="
+      },
+      "activated_at": "2026-10-07T23:36:51+07:00",
+      "activated_commit": ""
+    },
+    {
+      "id": "H002",
+      "priority": 2,
+      "category": "harness",
+      "behavior": "The project has a real test command (commands.test) and at least one passing test.",
+      "verification": "python scripts/harness.py check --only test",
+      "status": "passing",
+      "depends_on": [
+        "H001"
+      ],
+      "evidence": {
+        "verified_at": "2026-10-07T23:37:38+07:00",
+        "commit": null,
+        "command": "python scripts/harness.py check --only test",
+        "exit_code": 0,
+        "duration_s": 19.5,
+        "project_check": "quick",
+        "output_tail": "== harness check (quick) @ no-git ==\n[PASS] test (19.0s)\n== RESULT: PASS =="
+      },
+      "activated_at": "2026-10-07T23:37:18+07:00",
+      "activated_commit": ""
+    },
+    {
+      "id": "H003",
+      "priority": 3,
+      "category": "harness",
+      "behavior": "A smoke check covers the startup path (commands.smoke: import app / build / call health) and passes.",
+      "verification": "python scripts/harness.py check --only smoke",
+      "status": "passing",
+      "depends_on": [
+        "H001"
+      ],
+      "evidence": {
+        "verified_at": "2026-10-07T23:37:39+07:00",
+        "commit": null,
+        "command": "python scripts/harness.py check --only smoke",
+        "exit_code": 0,
+        "duration_s": 0.8,
+        "project_check": "quick",
+        "output_tail": "== harness check (quick) @ no-git ==\n[PASS] smoke (0.3s)\n== RESULT: PASS =="
+      },
+      "activated_at": "2026-10-07T23:37:38+07:00",
+      "activated_commit": ""
+    },
+    {
+      "id": "H004",
+      "priority": 4,
+      "category": "harness",
+      "behavior": "Project knowledge lives in the repo: AGENTS.md and docs/ are fully filled in (no HARNESS:FILL left, no broken links, AGENTS.md ≤ 200 lines).",
+      "verification": "python scripts/harness.py docs --strict",
+      "status": "passing",
+      "depends_on": [],
+      "evidence": {
+        "verified_at": "2026-10-07T23:39:23+07:00",
+        "commit": null,
+        "command": "python scripts/harness.py docs --strict",
+        "exit_code": 0,
+        "duration_s": 0.4,
+        "project_check": "quick",
+        "output_tail": "docs: PASS"
+      },
+      "activated_at": "2026-10-07T23:39:03+07:00",
+      "activated_commit": ""
+    },
+    {
+      "id": "H006",
+      "priority": 6,
+      "category": "harness",
+      "behavior": "Optimization backlog: grade A–D in docs/QUALITY.md and create at least 3 `refactor` features with measurable verification commands for low-scoring hotspots/modules.",
+      "verification": "python scripts/harness.py validate --require refactor:3",
+      "status": "passing",
+      "depends_on": [
+        "H004"
+      ],
+      "evidence": {
+        "verified_at": "2026-10-07T23:40:36+07:00",
+        "commit": null,
+        "command": "python scripts/harness.py validate --require refactor:3",
+        "exit_code": 0,
+        "duration_s": 0.1,
+        "project_check": "quick",
+        "output_tail": "feature list is valid."
+      },
+      "activated_at": "2026-10-07T23:40:02+07:00",
+      "activated_commit": ""
+    },
+    {
+      "id": "R001",
+      "category": "refactor",
+      "behavior": "audit.subsystem_checks split into one builder per subsystem (each <= 40 lines); audit output unchanged",
+      "verification": "python -m unittest -q tests.test_kit && python scripts/harness.py size harness_kit/audit.py::subsystem_checks --max-lines 40",
+      "status": "passing",
+      "depends_on": [],
+      "evidence": {
+        "verified_at": "2026-10-08T11:31:21+07:00",
+        "commit": "60c8cc1",
+        "command": "python -m unittest -q tests.test_kit && python scripts/harness.py size harness_kit/audit.py::subsystem_checks --max-lines 40",
+        "exit_code": 0,
+        "duration_s": 20.4,
+        "project_check": "quick",
+        "output_tail": "[PASS] harness_kit/audit.py::subsystem_checks: 9 lines (limit 40)\n----------------------------------------------------------------------\nRan 34 tests in 20.101s\n\nOK"
+      },
+      "out_of_scope": "check names/fixes, scoring",
+      "scope": [
+        "harness_kit/audit.py",
+        "tests/*"
+      ],
+      "priority": 20,
+      "activated_at": "2026-10-08T11:25:57+07:00",
+      "activated_commit": "fdd8a3fee4549a8d5ae7d17bfb6c2cb47dfec7d7"
+    },
+    {
+      "id": "R002",
+      "category": "refactor",
+      "behavior": "runtime cmd_exit_check and cmd_verify each <= 40 lines via extracted helpers; behavior unchanged",
+      "verification": "python -m unittest -q tests.test_kit && python scripts/harness.py size harness_kit/runtime.py::cmd_exit_check harness_kit/runtime.py::cmd_verify --max-lines 40",
+      "status": "passing",
+      "depends_on": [],
+      "evidence": {
+        "verified_at": "2026-10-08T11:40:55+07:00",
+        "commit": "bb446c5",
+        "command": "python -m unittest -q tests.test_kit && python scripts/harness.py size harness_kit/runtime.py::cmd_exit_check harness_kit/runtime.py::cmd_verify --max-lines 40",
+        "exit_code": 0,
+        "duration_s": 30.6,
+        "project_check": "quick",
+        "output_tail": "[PASS] harness_kit/runtime.py::cmd_exit_check: 16 lines (limit 40)\n[PASS] harness_kit/runtime.py::cmd_verify: 20 lines (limit 40)\n----------------------------------------------------------------------\nRan 35 tests in 30.154s\n\nOK"
+      },
+      "out_of_scope": "CLI flags, messages, feature schema",
+      "scope": [
+        "harness_kit/runtime.py",
+        "scripts/harness.py",
+        "tests/*"
+      ],
+      "priority": 21,
+      "activated_at": "2026-10-08T11:31:33+07:00",
+      "activated_commit": "38cf73c9091d4e1c30838065f266a5d513e9e82b"
+    },
+    {
+      "id": "R003",
+      "category": "refactor",
+      "behavior": "scaffold.build_plan <= 35 lines: planning separated from the policy notes",
+      "verification": "python -m unittest -q tests.test_kit && python scripts/harness.py size harness_kit/scaffold.py::build_plan --max-lines 35",
+      "status": "passing",
+      "depends_on": [],
+      "evidence": {
+        "verified_at": "2026-10-08T11:45:55+07:00",
+        "commit": "eaf7252",
+        "command": "python -m unittest -q tests.test_kit && python scripts/harness.py size harness_kit/scaffold.py::build_plan --max-lines 35",
+        "exit_code": 0,
+        "duration_s": 31.9,
+        "project_check": "quick",
+        "output_tail": "[PASS] harness_kit/scaffold.py::build_plan: 20 lines (limit 35)\n----------------------------------------------------------------------\nRan 36 tests in 31.477s\n\nOK"
+      },
+      "out_of_scope": "generated file set, templates",
+      "scope": [
+        "harness_kit/scaffold.py",
+        "tests/*"
+      ],
+      "priority": 22,
+      "activated_at": "2026-10-08T11:41:02+07:00",
+      "activated_commit": "9a2d0435d02b9db8289964e52b40d11d5f966b03"
+    },
+    {
+      "id": "T001",
+      "category": "test",
+      "behavior": "Detector tests for Java (Maven/Gradle), Go, Rust, .NET, PHP and Ruby fixtures",
+      "verification": "python -m unittest -q tests.test_kit.DetectTests",
+      "status": "passing",
+      "depends_on": [],
+      "evidence": {
+        "verified_at": "2026-10-08T00:09:57+07:00",
+        "commit": "ec0c216",
+        "command": "python -m unittest -q tests.test_kit.DetectTests",
+        "exit_code": 0,
+        "duration_s": 0.4,
+        "project_check": "quick",
+        "output_tail": "----------------------------------------------------------------------\nRan 3 tests in 0.033s\n\nOK"
+      },
+      "scope": [
+        "tests/*",
+        "harness_kit/detect.py"
+      ],
+      "priority": 10,
+      "activated_at": "2026-10-08T00:05:35+07:00",
+      "activated_commit": "ec0c216edbae12b23abd82f0b832bb141c635107"
+    },
+    {
+      "id": "B001",
+      "category": "bugfix",
+      "behavior": "Retrofit writes .gitattributes so init.sh/scripts keep LF and init.ps1 keeps CRLF under core.autocrlf=true; the kit repo has the same rules",
+      "verification": "python -m unittest -q tests.test_kit.RetrofitTests.test_gitattributes_pins_line_endings",
+      "status": "passing",
+      "depends_on": [],
+      "evidence": {
+        "verified_at": "2026-10-07T23:49:48+07:00",
+        "commit": "c519370",
+        "command": "python -m unittest -q tests.test_kit.RetrofitTests.test_gitattributes_pins_line_endings",
+        "exit_code": 0,
+        "duration_s": 1.0,
+        "project_check": "quick",
+        "output_tail": "----------------------------------------------------------------------\nRan 1 test in 0.626s\n\nOK"
+      },
+      "scope": [
+        "harness_kit/scaffold.py",
+        "tests/*",
+        ".gitattributes"
+      ],
+      "priority": 5,
+      "activated_at": "2026-10-07T23:48:50+07:00",
+      "activated_commit": "c519370d36a3eba6cb98b42e3469d8a3916d28e1"
+    },
+    {
+      "id": "B002",
+      "category": "bugfix",
+      "behavior": "Fix B001 checker findings: detect effective line-ending attributes (git check-attr / parsed rules) instead of a substring, propose+note when not pinned, narrow rules to harness files, git autocrlf round-trip test; run checker BEFORE verify in skill/playbook",
+      "verification": "python -m unittest -q tests.test_kit.RetrofitTests.test_gitattributes_pins_line_endings tests.test_kit.RetrofitTests.test_gitattributes_autocrlf_round_trip",
+      "status": "passing",
+      "depends_on": [],
+      "evidence": {
+        "verified_at": "2026-10-08T00:05:17+07:00",
+        "commit": "c519370",
+        "command": "python -m unittest -q tests.test_kit.RetrofitTests.test_gitattributes_pins_line_endings tests.test_kit.RetrofitTests.test_gitattributes_autocrlf_round_trip",
+        "exit_code": 0,
+        "duration_s": 3.5,
+        "project_check": "quick",
+        "output_tail": "----------------------------------------------------------------------\nRan 2 tests in 2.823s\n\nOK"
+      },
+      "scope": [
+        "harness_kit/scaffold.py",
+        "harness_kit/templates/*",
+        "tests/*",
+        ".gitattributes",
+        "README.md",
+        "skills/*"
+      ],
+      "priority": 6,
+      "activated_at": "2026-10-07T23:53:34+07:00",
+      "activated_commit": "c519370d36a3eba6cb98b42e3469d8a3916d28e1"
+    },
+    {
+      "id": "B003",
+      "category": "bugfix",
+      "behavior": "Multi-module Maven/Gradle/.NET/Cargo repos yield one stack at the build root (reusing its wrapper), not duplicate per-module stacks; settings.gradle roots are detected",
+      "verification": "python -m unittest -q tests.test_kit.DetectTests.test_multi_module_roots",
+      "status": "passing",
+      "depends_on": [],
+      "evidence": {
+        "verified_at": "2026-10-08T11:25:48+07:00",
+        "commit": "bb3f12c",
+        "command": "python -m unittest -q tests.test_kit.DetectTests.test_multi_module_roots",
+        "exit_code": 0,
+        "duration_s": 0.7,
+        "project_check": "quick",
+        "output_tail": "----------------------------------------------------------------------\nRan 1 test in 0.081s\n\nOK"
+      },
+      "scope": [
+        "harness_kit/detect.py",
+        "tests/*"
+      ],
+      "priority": 11,
+      "activated_at": "2026-10-08T11:18:10+07:00",
+      "activated_commit": "bb3f12c3021456618b6ca764ffe2c24d27bf2c31"
+    },
+    {
+      "id": "B004",
+      "category": "bugfix",
+      "behavior": "Generated commands run under Windows cmd.exe: php vendor/bin/phpunit, php vendor/bin/phpstan analyse, ruby bin/rails server, no inline '# comment' in the FastAPI dev hint",
+      "verification": "python -m unittest -q tests.test_kit.DetectTests.test_windows_safe_commands",
+      "status": "passing",
+      "depends_on": [],
+      "evidence": {
+        "verified_at": "2026-10-08T11:14:41+07:00",
+        "commit": "7966841",
+        "command": "python -m unittest -q tests.test_kit.DetectTests.test_windows_safe_commands",
+        "exit_code": 0,
+        "duration_s": 0.3,
+        "project_check": "quick",
+        "output_tail": "----------------------------------------------------------------------\nRan 1 test in 0.016s\n\nOK"
+      },
+      "scope": [
+        "harness_kit/detect.py",
+        "tests/*"
+      ],
+      "priority": 12,
+      "activated_at": "2026-10-08T11:11:20+07:00",
+      "activated_commit": "79668416d97f406053832ba1c4ca2b169f42659f"
+    },
+    {
+      "id": "B005",
+      "category": "bugfix",
+      "behavior": "Detector gaps: dotnet lockfile check without a full-tree glob, *.fsproj/*.vbproj, phpstan.neon.dist, hidden grandchildren skipped in monorepo scan",
+      "verification": "python -m unittest -q tests.test_kit.DetectTests.test_detector_gaps",
+      "status": "passing",
+      "depends_on": [],
+      "evidence": {
+        "verified_at": "2026-10-08T11:17:57+07:00",
+        "commit": "8bc72b8",
+        "command": "python -m unittest -q tests.test_kit.DetectTests.test_detector_gaps",
+        "exit_code": 0,
+        "duration_s": 0.7,
+        "project_check": "quick",
+        "output_tail": "----------------------------------------------------------------------\nRan 1 test in 0.400s\n\nOK"
+      },
+      "scope": [
+        "harness_kit/detect.py",
+        "tests/*"
+      ],
+      "priority": 13,
+      "activated_at": "2026-10-08T11:15:16+07:00",
+      "activated_commit": "8bc72b86a37c1c6027ddeaabc21014b855262a6f"
+    },
+    {
+      "id": "C001",
+      "category": "feature",
+      "behavior": "Claude Code guardrails are opt-in: retrofit generates .claude/ (settings + Stop hook, harness-checker, harness-optimize skill) only with --claude; generated docs stay valid without them; the kit repo itself has no .claude/",
+      "verification": "python -m unittest -q tests.test_kit.RetrofitTests.test_claude_guardrails_opt_in",
+      "status": "passing",
+      "depends_on": [],
+      "evidence": {
+        "verified_at": "2026-10-09T09:29:48+07:00",
+        "commit": "a85c8bc",
+        "command": "python -m unittest -q tests.test_kit.RetrofitTests.test_claude_guardrails_opt_in",
+        "exit_code": 0,
+        "duration_s": 1.8,
+        "project_check": "quick",
+        "output_tail": "----------------------------------------------------------------------\nRan 1 test in 1.278s\n\nOK",
+        "out_of_scope_changes": [
+          "harness_kit/audit.py"
+        ]
+      },
+      "scope": [
+        "harness_kit/scaffold.py",
+        "harness_kit/cli.py",
+        "harness_kit/templates/*",
+        "tests/*",
+        "skills/*",
+        "README.md"
+      ],
+      "priority": 1,
+      "activated_at": "2026-10-09T09:18:30+07:00",
+      "activated_commit": "a85c8bc62188e62fd5a76093ed3fa096b5e1d841"
+    },
+    {
+      "id": "B006",
+      "category": "bugfix",
+      "behavior": "A default --level minimal retrofit passes docs --strict once placeholders are filled (PROGRESS.md template must not link docs/QUALITY.md when it is not generated)",
+      "verification": "python -m unittest -q tests.test_kit.RetrofitTests.test_minimal_level_docs_valid",
+      "status": "passing",
+      "depends_on": [],
+      "evidence": {
+        "verified_at": "2026-10-09T09:51:25+07:00",
+        "commit": "18e47c3",
+        "command": "python -m unittest -q tests.test_kit.RetrofitTests.test_minimal_level_docs_valid",
+        "exit_code": 0,
+        "duration_s": 3.1,
+        "project_check": "quick",
+        "output_tail": "----------------------------------------------------------------------\nRan 1 test in 2.530s\n\nOK"
+      },
+      "scope": [
+        "harness_kit/scaffold.py",
+        "harness_kit/templates/*",
+        "tests/*"
+      ],
+      "priority": 30,
+      "activated_at": "2026-10-09T09:41:33+07:00",
+      "activated_commit": "18e47c394191ae01877f3f8964b7a8f8bac5e908"
+    },
+    {
+      "id": "C002",
+      "category": "feature",
+      "behavior": "retrofit --claude into an existing .claude/: additive only — settings.json permissions/hooks merged (user entries kept, the harness's own hook-stop entry replaced), same-named harness items (agents/harness-checker.md, skills/harness-optimize/) replaced, everything else untouched; unparseable settings -> proposal + note; idempotent",
+      "verification": "python -m unittest -q tests.test_kit.RetrofitTests.test_claude_merges_into_existing_dir",
+      "status": "passing",
+      "depends_on": [],
+      "evidence": {
+        "verified_at": "2026-10-09T10:13:20+07:00",
+        "commit": "7e58286",
+        "command": "python -m unittest -q tests.test_kit.RetrofitTests.test_claude_merges_into_existing_dir",
+        "exit_code": 0,
+        "duration_s": 7.0,
+        "project_check": "quick",
+        "output_tail": "----------------------------------------------------------------------\nRan 1 test in 6.329s\n\nOK"
+      },
+      "scope": [
+        "harness_kit/scaffold.py",
+        "tests/*",
+        "README.md",
+        "skills/*"
+      ],
+      "priority": 2,
+      "activated_at": "2026-10-09T09:51:50+07:00",
+      "activated_commit": "7e58286254eb004780b9a43928b19c69097536ea"
+    },
+    {
+      "id": "L001",
+      "category": "feature",
+      "behavior": "harness loop: autonomous maker -> independent reviewer -> verify cycle through the claude CLI (claude -p, user's login, no API key): fresh sessions, JSON verdict, PreToolUse guard via --settings (scope, protected harness files, no self-verify/commit), attempts/budget stop conditions, cost evidence, block + failure log on exhaustion, no auto-commit by default; testable offline with a fake agent",
+      "verification": "python -m unittest -q tests.test_kit.LoopTests",
+      "status": "passing",
+      "depends_on": [],
+      "evidence": {
+        "verified_at": "2026-10-10T12:01:40+07:00",
+        "commit": "f71d4d6",
+        "command": "python -m unittest -q tests.test_kit.LoopTests",
+        "exit_code": 0,
+        "duration_s": 50.8,
+        "project_check": "quick",
+        "output_tail": "----------------------------------------------------------------------\nRan 31 tests in 50.208s\n\nOK"
+      },
+      "scope": [
+        "harness_kit/runtime.py",
+        "scripts/harness.py",
+        "harness_kit/scaffold.py",
+        "tests/*",
+        "README.md"
+      ],
+      "priority": 1,
+      "activated_at": "2026-10-09T16:04:56+07:00",
+      "activated_commit": "f71d4d6c3773d9b967f125321b52646af0fc062d"
+    },
+    {
+      "id": "L002",
+      "category": "feature",
+      "behavior": "loop observability: every loop run writes .harness/runs/<run-id>/ (events.jsonl with every step incl. passed gates, per-session prompt + stream-json transcript, hook decisions) and a report.md whose theory checklist (WIP/scope, maker-checker separation, read-only reviewer, pass-gate, feedback loop, real tests, stop conditions, harness integrity) is computed from the logged data; 'harness.py report [run]' prints it",
+      "verification": "python -m unittest -q tests.test_kit.LoopTests",
+      "status": "passing",
+      "depends_on": [],
+      "evidence": {
+        "verified_at": "2026-10-10T14:41:34+07:00",
+        "commit": "15e9b82",
+        "command": "python -m unittest -q tests.test_kit.LoopTests",
+        "exit_code": 0,
+        "duration_s": 183.0,
+        "project_check": "quick",
+        "output_tail": "----------------------------------------------------------------------\nRan 46 tests in 182.502s\n\nOK"
+      },
+      "scope": [
+        "harness_kit/runtime.py",
+        "scripts/harness.py",
+        "tests/*",
+        "README.md",
+        "docs/*",
+        ".harness/.gitignore",
+        "harness_kit/scaffold.py"
+      ],
+      "priority": 0,
+      "activated_at": "2026-10-10T13:22:55+07:00",
+      "activated_commit": "15e9b828a835eeb49ab54dd1133d29c18c5851cd"
+    },
+    {
+      "id": "V001",
+      "category": "feature",
+      "behavior": "The .claude/ payload installs 6 agents and 16 hk-* skills whose frontmatter is valid (name = directory, description, tools)",
+      "verification": "python -m unittest -q tests.test_v2.InstallerTests.test_payload_frontmatter_is_valid",
+      "status": "passing",
+      "depends_on": [],
+      "evidence": {
+        "verified_at": "2026-10-15T19:48:40+07:00",
+        "commit": null,
+        "command": "python -m unittest -q tests.test_v2.InstallerTests.test_payload_frontmatter_is_valid",
+        "exit_code": 0,
+        "duration_s": 0.1,
+        "project_check": "quick",
+        "output_tail": "----------------------------------------------------------------------\nRan 1 test in 0.005s\n\nOK",
+        "out_of_scope_changes": [
+          ".gitattributes",
+          ".gitignore",
+          "README.md",
+          "harness.py",
+          "harness_kit/__init__.py",
+          "harness_kit/__main__.py",
+          "harness_kit/audit.py",
+          "harness_kit/cli.py",
+          "harness_kit/detect.py",
+          "harness_kit/installer.py",
+          "harness_kit/runtime.py",
+          "harness_kit/scaffold.py",
+          "harness_kit/templates/AGENTS.md",
+          "harness_kit/templates/CLAUDE.md",
+          "harness_kit/templates/PROGRESS.md",
+          "harness_kit/templates/docs/ARCHITECTURE.md",
+          "harness_kit/templates/docs/DECISIONS.md",
+          "harness_kit/templates/docs/PRODUCT.md",
+          "harness_kit/templates/docs/QUALITY.md",
+          "harness_kit/templates/docs/RELIABILITY.md"
+        ]
+      },
+      "scope": [
+        "harness_kit/templates/claude/*",
+        "tests/*"
+      ],
+      "priority": 1,
+      "activated_at": "2026-10-15T19:46:58+07:00",
+      "activated_commit": ""
+    },
+    {
+      "id": "V002",
+      "category": "feature",
+      "behavior": "Interactive hooks follow each Claude Code event contract through the fail-open dispatcher: state injection, deny/ask guard (never allow), activity, compaction snapshot, Stop exit 2, status line",
+      "verification": "python -m unittest -q tests.test_v2.ClaudeHookTests",
+      "status": "passing",
+      "depends_on": [
+        "V001"
+      ],
+      "evidence": {
+        "verified_at": "2026-10-15T19:50:34+07:00",
+        "commit": null,
+        "command": "python -m unittest -q tests.test_v2.ClaudeHookTests",
+        "exit_code": 0,
+        "duration_s": 6.7,
+        "project_check": "quick",
+        "output_tail": "----------------------------------------------------------------------\nRan 7 tests in 6.593s\n\nOK",
+        "out_of_scope_changes": [
+          ".gitattributes",
+          ".gitignore",
+          "README.md",
+          "harness.py",
+          "install.ps1",
+          "install.sh",
+          "package.json",
+          "pyproject.toml",
+          "skills/harness-retrofit/SKILL.md"
+        ]
+      },
+      "scope": [
+        "harness_kit/*",
+        "tests/*"
+      ],
+      "priority": 2,
+      "activated_at": "2026-10-15T19:48:41+07:00",
+      "activated_commit": ""
+    },
+    {
+      "id": "V003",
+      "category": "feature",
+      "behavior": "install / update / uninstall / doctor / global install keep user files and settings (manifest with sha256), refresh only unchanged harness files",
+      "verification": "python -m unittest -q tests.test_v2.InstallerTests",
+      "status": "passing",
+      "depends_on": [
+        "V002"
+      ],
+      "evidence": {
+        "verified_at": "2026-10-15T19:52:29+07:00",
+        "commit": null,
+        "command": "python -m unittest -q tests.test_v2.InstallerTests",
+        "exit_code": 0,
+        "duration_s": 2.4,
+        "project_check": "quick",
+        "output_tail": "----------------------------------------------------------------------\nRan 5 tests in 2.253s\n\nOK",
+        "out_of_scope_changes": [
+          ".gitattributes",
+          ".gitignore",
+          "README.md",
+          "harness.py",
+          "install.ps1",
+          "install.sh",
+          "package.json",
+          "pyproject.toml",
+          "skills/harness-retrofit/SKILL.md"
+        ]
+      },
+      "scope": [
+        "harness_kit/*",
+        "tests/*"
+      ],
+      "priority": 3,
+      "activated_at": "2026-10-15T19:50:35+07:00",
+      "activated_commit": ""
+    },
+    {
+      "id": "V004",
+      "category": "feature",
+      "behavior": "Distribution: npx launcher finds Python and forwards to harness.py (init = install)",
+      "verification": "node bin/cli.js --help",
+      "status": "passing",
+      "depends_on": [
+        "V003"
+      ],
+      "evidence": {
+        "verified_at": "2026-10-15T19:54:18+07:00",
+        "commit": null,
+        "command": "node bin/cli.js --help",
+        "exit_code": 0,
+        "duration_s": 0.2,
+        "project_check": "quick",
+        "output_tail": "                        hooks, python (read-only)\n    upgrade             update scripts/harness.py to the latest runtime\n    install-skill       install the /harness-retrofit skill for Claude Code\n    run                 run the runtime on a project: harness run <path>\n                        <runtime command...>\n\noptions:\n  -h, --help            show this help message and exit",
+        "out_of_scope_changes": [
+          ".gitattributes",
+          ".gitignore",
+          "README.md",
+          "harness.py",
+          "harness_kit/__init__.py",
+          "harness_kit/__main__.py",
+          "harness_kit/audit.py",
+          "harness_kit/cli.py",
+          "harness_kit/detect.py",
+          "harness_kit/installer.py",
+          "harness_kit/runtime.py",
+          "harness_kit/scaffold.py",
+          "harness_kit/templates/AGENTS.md",
+          "harness_kit/templates/CLAUDE.md",
+          "harness_kit/templates/PROGRESS.md",
+          "harness_kit/templates/claude/agents/hk-debugger.md",
+          "harness_kit/templates/claude/agents/hk-docs-keeper.md",
+          "harness_kit/templates/claude/agents/hk-initializer.md",
+          "harness_kit/templates/claude/agents/hk-maker.md",
+          "harness_kit/templates/claude/agents/hk-planner.md"
+        ]
+      },
+      "scope": [
+        "bin/*",
+        "package.json",
+        "install.sh",
+        "install.ps1"
+      ],
+      "priority": 4,
+      "activated_at": "2026-10-15T19:52:29+07:00",
+      "activated_commit": ""
+    },
+    {
+      "id": "V005",
+      "category": "harness",
+      "behavior": "Docs of the kit match v2 (README, HUONG-DAN, V2-DESIGN, AGENTS, DECISIONS, ARCHITECTURE) with no broken links or placeholders",
+      "verification": "python scripts/harness.py docs --strict",
+      "status": "passing",
+      "depends_on": [
+        "V004"
+      ],
+      "evidence": {
+        "verified_at": "2026-10-15T19:56:04+07:00",
+        "commit": null,
+        "command": "python scripts/harness.py docs --strict",
+        "exit_code": 0,
+        "duration_s": 0.1,
+        "project_check": "quick",
+        "output_tail": "docs: PASS",
+        "out_of_scope_changes": [
+          ".gitattributes",
+          ".gitignore",
+          "harness.py",
+          "harness_kit/__init__.py",
+          "harness_kit/__main__.py",
+          "harness_kit/audit.py",
+          "harness_kit/cli.py",
+          "harness_kit/detect.py",
+          "harness_kit/installer.py",
+          "harness_kit/runtime.py",
+          "harness_kit/scaffold.py",
+          "harness_kit/templates/claude/hooks/harness_hook.py",
+          "harness_kit/templates/init.ps1",
+          "harness_kit/templates/init.sh",
+          "install.ps1",
+          "install.sh",
+          "package.json",
+          "pyproject.toml",
+          "tests/__init__.py",
+          "tests/fake_agent.py"
+        ]
+      },
+      "scope": [
+        "*.md",
+        "docs/*"
+      ],
+      "priority": 5,
+      "activated_at": "2026-10-15T19:54:18+07:00",
+      "activated_commit": ""
+    }
+  ]
+}

@@ -1,0 +1,108 @@
+{
+  "version": 1,
+  "project": "harness",
+  "entry_file": "AGENTS.md",
+  "progress_file": "PROGRESS.md",
+  "feature_list": "feature_list.json",
+  "rules_file": ".harness/rules.json",
+  "max_entry_lines": 200,
+  "step_timeout_sec": 1800,
+  "commands": {
+    "setup": [
+      {
+        "cmd": "python -c \"import sys; assert sys.version_info >= (3, 10), 'harness-kit needs Python >= 3.10'\"",
+        "cwd": "."
+      }
+    ],
+    "dev": [],
+    "smoke": [
+      {
+        "cmd": "python harness.py --help",
+        "cwd": "."
+      }
+    ],
+    "lint": [
+      {
+        "cmd": "python -m compileall -q harness_kit tests harness.py",
+        "cwd": "."
+      }
+    ],
+    "typecheck": [],
+    "test": [
+      {
+        "cmd": "python -m unittest discover -s tests -t . -q",
+        "cwd": "."
+      }
+    ],
+    "build": [],
+    "e2e": []
+  },
+  "check": [
+    "rules",
+    "docs",
+    "lint",
+    "typecheck",
+    "test"
+  ],
+  "full_check": [
+    "rules",
+    "docs",
+    "lint",
+    "typecheck",
+    "test",
+    "build",
+    "e2e",
+    "regression"
+  ],
+  "debug_patterns": {
+    "error": [
+      "\\bconsole\\.log\\(",
+      "^\\s*debugger;?\\s*$",
+      "\\bbreakpoint\\(\\)",
+      "pdb\\.set_trace\\(",
+      "^\\s*import pdb",
+      "binding\\.pry",
+      "\\bvar_dump\\(",
+      "\\bdd\\("
+    ],
+    "warn": [
+      "System\\.out\\.println\\(",
+      "\\bTODO\\b",
+      "\\bFIXME\\b",
+      "\\bHACK\\b"
+    ]
+  },
+  "stale_artifacts": [
+    "*.tmp",
+    "*.bak",
+    "*.swp",
+    "*~",
+    "*.orig",
+    "*.rej",
+    "scratch.*",
+    "debug.*",
+    "temp.*",
+    "WIP.md",
+    "IN_PROGRESS.md",
+    "test-manual.*"
+  ],
+  "verify_check": "quick",
+  "scope_drift": "warn",
+  "scope_exempt": [
+    "PROGRESS.md",
+    "feature_list.json",
+    "AGENTS.md",
+    "CLAUDE.md",
+    "docs/*",
+    ".harness/*",
+    ".claude/*",
+    "scripts/harness.py",
+    "init.sh",
+    "init.ps1"
+  ],
+  "max_hard_constraints": 15,
+  "harness_version": "1.0.0",
+  "debug_exempt": [
+    "tests/*"
+  ]
+}

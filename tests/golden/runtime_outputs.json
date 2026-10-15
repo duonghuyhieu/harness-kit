@@ -1,0 +1,684 @@
+{
+  "verify_not_active": {
+    "rc": 1,
+    "out": [
+      "ERROR: H002 is not_started. Only an active feature can be verified (run `next --id H002`)."
+    ],
+    "features": {
+      "H001": [
+        "not_started",
+        [],
+        null
+      ],
+      "H002": [
+        "not_started",
+        [],
+        null
+      ],
+      "H003": [
+        "not_started",
+        [],
+        null
+      ],
+      "H004": [
+        "not_started",
+        [],
+        null
+      ],
+      "H005": [
+        "not_started",
+        [],
+        null
+      ],
+      "H006": [
+        "not_started",
+        [],
+        null
+      ]
+    }
+  },
+  "verify_unknown": {
+    "rc": 1,
+    "out": [
+      "ERROR: no feature 'NOPE' in the feature list.",
+      "FIX: run `status` to see the list of ids."
+    ],
+    "features": {
+      "H001": [
+        "not_started",
+        [],
+        null
+      ],
+      "H002": [
+        "not_started",
+        [],
+        null
+      ],
+      "H003": [
+        "not_started",
+        [],
+        null
+      ],
+      "H004": [
+        "not_started",
+        [],
+        null
+      ],
+      "H005": [
+        "not_started",
+        [],
+        null
+      ],
+      "H006": [
+        "not_started",
+        [],
+        null
+      ]
+    }
+  },
+  "verify_no_command": {
+    "rc": 1,
+    "out": [
+      "ERROR: X has no automated verification command.",
+      "  FIX: add a 'verification' field with a shell command that exits 0 when the behavior is correct (test, e2e script, curl...)."
+    ],
+    "features": {
+      "H001": [
+        "not_started",
+        [],
+        null
+      ],
+      "H002": [
+        "not_started",
+        [],
+        null
+      ],
+      "H003": [
+        "not_started",
+        [],
+        null
+      ],
+      "H004": [
+        "not_started",
+        [],
+        null
+      ],
+      "H005": [
+        "not_started",
+        [],
+        null
+      ],
+      "H006": [
+        "not_started",
+        [],
+        null
+      ],
+      "X": [
+        "active",
+        [],
+        null
+      ]
+    }
+  },
+  "verify_fail_third_attempt": {
+    "rc": 1,
+    "out": [
+      "== verify X: \"<PY>\" -c \"raise SystemExit(3)\"",
+      "",
+      "[FAIL] X is still active (attempt 3). Fix it and verify again. Tried ≥3 times: change your approach, or `block` it and record the reason."
+    ],
+    "features": {
+      "H001": [
+        "not_started",
+        [],
+        null
+      ],
+      "H002": [
+        "not_started",
+        [],
+        null
+      ],
+      "H003": [
+        "not_started",
+        [],
+        null
+      ],
+      "H004": [
+        "not_started",
+        [],
+        null
+      ],
+      "H005": [
+        "not_started",
+        [],
+        null
+      ],
+      "H006": [
+        "not_started",
+        [],
+        null
+      ],
+      "X": [
+        "active",
+        [],
+        3
+      ]
+    }
+  },
+  "verify_pass": {
+    "rc": 0,
+    "out": [
+      "== verify X: \"<PY>\" -c \"print('ok')\"",
+      "ok",
+      "== verification command passed; running the project-wide quick check to rule out regressions ==",
+      "== harness check (quick) @ <SHA> ==",
+      "[PASS] rules (<T>s)",
+      "[PASS] docs (<T>s)",
+      "   WARNING: AGENTS.md still has 2 unfilled `HARNESS:FILL` placeholder(s).",
+      "   WARNING: PROGRESS.md still has 1 unfilled `HARNESS:FILL` placeholder(s).",
+      "   WARNING: docs/ARCHITECTURE.md still has 4 unfilled `HARNESS:FILL` placeholder(s).",
+      "   WARNING: docs/DECISIONS.md still has 1 unfilled `HARNESS:FILL` placeholder(s).",
+      "   WARNING: docs/PRODUCT.md still has 3 unfilled `HARNESS:FILL` placeholder(s).",
+      "   WARNING: docs/QUALITY.md still has 1 unfilled `HARNESS:FILL` placeholder(s).",
+      "   WARNING: docs/RELIABILITY.md still has 2 unfilled `HARNESS:FILL` placeholder(s).",
+      "[SKIP] lint: not configured in .harness/config.json",
+      "[SKIP] typecheck: not configured in .harness/config.json",
+      "[PASS] test (<T>s)",
+      "== RESULT: PASS ==",
+      "[PASS] X → passing. Commit the work, update PROGRESS.md, then run `next`."
+    ],
+    "features": {
+      "H001": [
+        "not_started",
+        [],
+        null
+      ],
+      "H002": [
+        "not_started",
+        [],
+        null
+      ],
+      "H003": [
+        "not_started",
+        [],
+        null
+      ],
+      "H004": [
+        "not_started",
+        [],
+        null
+      ],
+      "H005": [
+        "not_started",
+        [],
+        null
+      ],
+      "H006": [
+        "not_started",
+        [],
+        null
+      ],
+      "X": [
+        "passing",
+        [
+          "command",
+          "commit",
+          "duration_s",
+          "exit_code",
+          "output_tail",
+          "project_check",
+          "verified_at"
+        ],
+        null
+      ]
+    }
+  },
+  "verify_already_passing": {
+    "rc": 0,
+    "out": [
+      "X is already passing (state transitions are one-way). Use `check --full` to run regressions."
+    ],
+    "features": {
+      "H001": [
+        "not_started",
+        [],
+        null
+      ],
+      "H002": [
+        "not_started",
+        [],
+        null
+      ],
+      "H003": [
+        "not_started",
+        [],
+        null
+      ],
+      "H004": [
+        "not_started",
+        [],
+        null
+      ],
+      "H005": [
+        "not_started",
+        [],
+        null
+      ],
+      "H006": [
+        "not_started",
+        [],
+        null
+      ],
+      "X": [
+        "passing",
+        [
+          "command",
+          "commit",
+          "duration_s",
+          "exit_code",
+          "output_tail",
+          "project_check",
+          "verified_at"
+        ],
+        null
+      ]
+    }
+  },
+  "verify_drift_warn": {
+    "rc": 0,
+    "out": [
+      "== verify X: \"<PY>\" -c \"print('ok')\"",
+      "ok",
+      "WARNING: 1 changed file(s) outside X's scope ['app/core/*']: app/other.py",
+      "  WHY: work outside the active feature is unverified scope creep (WIP=1).",
+      "  FIX: revert those changes, or `add` them as a separate feature.",
+      "== verification command passed; running the project-wide quick check to rule out regressions ==",
+      "== harness check (quick) @ <SHA> ==",
+      "[PASS] rules (<T>s)",
+      "[PASS] docs (<T>s)",
+      "   WARNING: AGENTS.md still has 2 unfilled `HARNESS:FILL` placeholder(s).",
+      "   WARNING: PROGRESS.md still has 1 unfilled `HARNESS:FILL` placeholder(s).",
+      "   WARNING: docs/ARCHITECTURE.md still has 4 unfilled `HARNESS:FILL` placeholder(s).",
+      "   WARNING: docs/DECISIONS.md still has 1 unfilled `HARNESS:FILL` placeholder(s).",
+      "   WARNING: docs/PRODUCT.md still has 3 unfilled `HARNESS:FILL` placeholder(s).",
+      "   WARNING: docs/QUALITY.md still has 1 unfilled `HARNESS:FILL` placeholder(s).",
+      "   WARNING: docs/RELIABILITY.md still has 2 unfilled `HARNESS:FILL` placeholder(s).",
+      "[SKIP] lint: not configured in .harness/config.json",
+      "[SKIP] typecheck: not configured in .harness/config.json",
+      "[PASS] test (<T>s)",
+      "== RESULT: PASS ==",
+      "[PASS] X → passing. Commit the work, update PROGRESS.md, then run `next`."
+    ],
+    "features": {
+      "H001": [
+        "not_started",
+        [],
+        null
+      ],
+      "H002": [
+        "not_started",
+        [],
+        null
+      ],
+      "H003": [
+        "not_started",
+        [],
+        null
+      ],
+      "H004": [
+        "not_started",
+        [],
+        null
+      ],
+      "H005": [
+        "not_started",
+        [],
+        null
+      ],
+      "H006": [
+        "not_started",
+        [],
+        null
+      ],
+      "X": [
+        "passing",
+        [
+          "command",
+          "commit",
+          "duration_s",
+          "exit_code",
+          "out_of_scope_changes",
+          "output_tail",
+          "project_check",
+          "verified_at"
+        ],
+        null
+      ]
+    }
+  },
+  "verify_drift_error": {
+    "rc": 1,
+    "out": [
+      "== verify X: \"<PY>\" -c \"print('ok')\"",
+      "ok",
+      "ERROR: 1 changed file(s) outside X's scope ['app/core/*']: app/other.py",
+      "  WHY: work outside the active feature is unverified scope creep (WIP=1).",
+      "  FIX: revert those changes, or `add` them as a separate feature."
+    ],
+    "features": {
+      "H001": [
+        "not_started",
+        [],
+        null
+      ],
+      "H002": [
+        "not_started",
+        [],
+        null
+      ],
+      "H003": [
+        "not_started",
+        [],
+        null
+      ],
+      "H004": [
+        "not_started",
+        [],
+        null
+      ],
+      "H005": [
+        "not_started",
+        [],
+        null
+      ],
+      "H006": [
+        "not_started",
+        [],
+        null
+      ],
+      "X": [
+        "active",
+        [],
+        null
+      ]
+    }
+  },
+  "verify_project_check_fails": {
+    "rc": 1,
+    "out": [
+      "== verify X: \"<PY>\" -c \"print('ok')\"",
+      "ok",
+      "== verification command passed; running the project-wide quick check to rule out regressions ==",
+      "== harness check (quick) @ <SHA> ==",
+      "[PASS] rules (<T>s)",
+      "[PASS] docs (<T>s)",
+      "   WARNING: AGENTS.md still has 2 unfilled `HARNESS:FILL` placeholder(s).",
+      "   WARNING: PROGRESS.md still has 1 unfilled `HARNESS:FILL` placeholder(s).",
+      "   WARNING: docs/ARCHITECTURE.md still has 4 unfilled `HARNESS:FILL` placeholder(s).",
+      "   WARNING: docs/DECISIONS.md still has 1 unfilled `HARNESS:FILL` placeholder(s).",
+      "   WARNING: docs/PRODUCT.md still has 3 unfilled `HARNESS:FILL` placeholder(s).",
+      "   WARNING: docs/QUALITY.md still has 1 unfilled `HARNESS:FILL` placeholder(s).",
+      "   WARNING: docs/RELIABILITY.md still has 2 unfilled `HARNESS:FILL` placeholder(s).",
+      "[SKIP] lint: not configured in .harness/config.json",
+      "[SKIP] typecheck: not configured in .harness/config.json",
+      "[FAIL] test (<T>s)",
+      "   ERROR: `\"<PY>\" -c \"raise SystemExit(3)\"` (cwd=.) exited with code 3 after <T>s.",
+      "     FIX: Run the test command on its own to see details. Fix the code, not the tests — unless a test is clearly wrong and you record why.",
+      "   ",
+      "== RESULT: FAIL ==",
+      "[FAIL] X was not moved to passing because the project-wide check failed."
+    ],
+    "features": {
+      "H001": [
+        "not_started",
+        [],
+        null
+      ],
+      "H002": [
+        "not_started",
+        [],
+        null
+      ],
+      "H003": [
+        "not_started",
+        [],
+        null
+      ],
+      "H004": [
+        "not_started",
+        [],
+        null
+      ],
+      "H005": [
+        "not_started",
+        [],
+        null
+      ],
+      "H006": [
+        "not_started",
+        [],
+        null
+      ],
+      "X": [
+        "active",
+        [],
+        null
+      ]
+    }
+  },
+  "verify_skip_check": {
+    "rc": 0,
+    "out": [
+      "== verify X: \"<PY>\" -c \"print('ok')\"",
+      "ok",
+      "[PASS] X → passing. Commit the work, update PROGRESS.md, then run `next`."
+    ],
+    "features": {
+      "H001": [
+        "not_started",
+        [],
+        null
+      ],
+      "H002": [
+        "not_started",
+        [],
+        null
+      ],
+      "H003": [
+        "not_started",
+        [],
+        null
+      ],
+      "H004": [
+        "not_started",
+        [],
+        null
+      ],
+      "H005": [
+        "not_started",
+        [],
+        null
+      ],
+      "H006": [
+        "not_started",
+        [],
+        null
+      ],
+      "X": [
+        "passing",
+        [
+          "command",
+          "commit",
+          "duration_s",
+          "exit_code",
+          "output_tail",
+          "project_check",
+          "verified_at"
+        ],
+        null
+      ]
+    }
+  },
+  "exit_no_session_dirty": {
+    "rc": 1,
+    "out": [
+      "== SESSION EXIT CHECK ==",
+      "WARNING: commands.smoke (quick startup command) is not configured — cannot verify the startup path.",
+      "WARNING: no .harness/session.json — next time, start the session with `start`.",
+      "WARNING: app/n.py: # TODO x",
+      "WARNING: 2 uncommitted file(s) — commit the verified work, or record the WIP in PROGRESS.md.",
+      "ERROR: leftover debug code: app/n.py: breakpoint()",
+      "ERROR: temporary/junk file: junk.tmp",
+      "== NOT CLEAN: 2 problem(s) =="
+    ],
+    "features": {
+      "H001": [
+        "not_started",
+        [],
+        null
+      ],
+      "H002": [
+        "not_started",
+        [],
+        null
+      ],
+      "H003": [
+        "not_started",
+        [],
+        null
+      ],
+      "H004": [
+        "not_started",
+        [],
+        null
+      ],
+      "H005": [
+        "not_started",
+        [],
+        null
+      ],
+      "H006": [
+        "not_started",
+        [],
+        null
+      ]
+    }
+  },
+  "exit_progress_stale_smoke_fails": {
+    "rc": 1,
+    "out": [
+      "== SESSION EXIT CHECK ==",
+      "== harness check (quick) @ <SHA> ==",
+      "[PASS] rules (<T>s)",
+      "[PASS] docs (<T>s)",
+      "   WARNING: AGENTS.md still has 2 unfilled `HARNESS:FILL` placeholder(s).",
+      "   WARNING: PROGRESS.md still has 1 unfilled `HARNESS:FILL` placeholder(s).",
+      "   WARNING: docs/ARCHITECTURE.md still has 4 unfilled `HARNESS:FILL` placeholder(s).",
+      "   WARNING: docs/DECISIONS.md still has 1 unfilled `HARNESS:FILL` placeholder(s).",
+      "   WARNING: docs/PRODUCT.md still has 3 unfilled `HARNESS:FILL` placeholder(s).",
+      "   WARNING: docs/QUALITY.md still has 1 unfilled `HARNESS:FILL` placeholder(s).",
+      "   WARNING: docs/RELIABILITY.md still has 2 unfilled `HARNESS:FILL` placeholder(s).",
+      "[SKIP] lint: not configured in .harness/config.json",
+      "[SKIP] typecheck: not configured in .harness/config.json",
+      "[PASS] test (<T>s)",
+      "== RESULT: PASS ==",
+      "WARNING: 1 uncommitted file(s) — commit the verified work, or record the WIP in PROGRESS.md.",
+      "ERROR: standard startup path is broken: `\"<PY>\" -c \"raise SystemExit(3)\"`",
+      "",
+      "ERROR: PROGRESS.md was not updated this session (run `handoff`, then write Done / In Progress / Known Issues / Next Steps).",
+      "== NOT CLEAN: 2 problem(s) =="
+    ],
+    "features": {
+      "H001": [
+        "not_started",
+        [],
+        null
+      ],
+      "H002": [
+        "not_started",
+        [],
+        null
+      ],
+      "H003": [
+        "not_started",
+        [],
+        null
+      ],
+      "H004": [
+        "not_started",
+        [],
+        null
+      ],
+      "H005": [
+        "not_started",
+        [],
+        null
+      ],
+      "H006": [
+        "not_started",
+        [],
+        null
+      ]
+    }
+  },
+  "exit_clean_with_drift_warn": {
+    "rc": 0,
+    "out": [
+      "== SESSION EXIT CHECK ==",
+      "== harness check (quick) @ <SHA> ==",
+      "[PASS] rules (<T>s)",
+      "[PASS] docs (<T>s)",
+      "   WARNING: AGENTS.md still has 2 unfilled `HARNESS:FILL` placeholder(s).",
+      "   WARNING: PROGRESS.md still has 1 unfilled `HARNESS:FILL` placeholder(s).",
+      "   WARNING: docs/ARCHITECTURE.md still has 4 unfilled `HARNESS:FILL` placeholder(s).",
+      "   WARNING: docs/DECISIONS.md still has 1 unfilled `HARNESS:FILL` placeholder(s).",
+      "   WARNING: docs/PRODUCT.md still has 3 unfilled `HARNESS:FILL` placeholder(s).",
+      "   WARNING: docs/QUALITY.md still has 1 unfilled `HARNESS:FILL` placeholder(s).",
+      "   WARNING: docs/RELIABILITY.md still has 2 unfilled `HARNESS:FILL` placeholder(s).",
+      "[SKIP] lint: not configured in .harness/config.json",
+      "[SKIP] typecheck: not configured in .harness/config.json",
+      "[PASS] test (<T>s)",
+      "== RESULT: PASS ==",
+      "WARNING: 1 changed file(s) outside X's scope: app/other.py",
+      "WARNING: 4 uncommitted file(s) — commit the verified work, or record the WIP in PROGRESS.md.",
+      "== CLEAN STATE =="
+    ],
+    "features": {
+      "H001": [
+        "not_started",
+        [],
+        null
+      ],
+      "H002": [
+        "not_started",
+        [],
+        null
+      ],
+      "H003": [
+        "not_started",
+        [],
+        null
+      ],
+      "H004": [
+        "not_started",
+        [],
+        null
+      ],
+      "H005": [
+        "not_started",
+        [],
+        null
+      ],
+      "H006": [
+        "not_started",
+        [],
+        null
+      ],
+      "X": [
+        "active",
+        [],
+        null
+      ]
+    }
+  }
+}

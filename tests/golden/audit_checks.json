@@ -1,0 +1,550 @@
+{
+  "legacy": {
+    "Instructions": [
+      {
+        "name": "Agent instruction file exists (AGENTS.md/CLAUDE.md)",
+        "ok": true,
+        "fix": "Create a ~100-line AGENTS.md: overview, standard commands, hard constraints, docs map."
+      },
+      {
+        "name": "Instruction file ≤ 200 lines (a router, not an encyclopedia)",
+        "ok": false,
+        "fix": "Split CLAUDE.md (261 lines) into a router + docs/<topic>.md."
+      },
+      {
+        "name": "Lists verification commands",
+        "ok": false,
+        "fix": "State the test/lint/type-check/full-check commands explicitly in the instruction file."
+      },
+      {
+        "name": "Points to topic docs in docs/",
+        "ok": false,
+        "fix": "Add a 'Docs map' section linking docs/<topic>.md + when to read each."
+      },
+      {
+        "name": "Architecture doc exists",
+        "ok": false,
+        "fix": "Write docs/ARCHITECTURE.md: module map, dependency direction, boundaries."
+      }
+    ],
+    "Tools": [
+      {
+        "name": "Setup command detected",
+        "ok": true,
+        "fix": "Declare the dependency install command."
+      },
+      {
+        "name": "Test command",
+        "ok": true,
+        "fix": "Add a test runner and a test command."
+      },
+      {
+        "name": "Static checks (lint and/or type-check)",
+        "ok": true,
+        "fix": "Add a linter (ruff/eslint/golangci/...) or type-checking (mypy/pyright/tsc --noEmit/...)."
+      },
+      {
+        "name": "Agent permissions scoped (least privilege)",
+        "ok": false,
+        "fix": "Scope the agent's permissions in its own config (allow the verification commands, deny force-push and reading .env); for Claude Code, `harness retrofit --claude` generates it (opt-in)."
+      },
+      {
+        "name": "Single overall verification command (check)",
+        "ok": false,
+        "fix": "Create one entry point that runs all verification (scripts/harness.py check or make check)."
+      }
+    ],
+    "Environment": [
+      {
+        "name": "Stack detected",
+        "ok": true,
+        "fix": "Add a standard manifest (pyproject.toml, package.json, ...)."
+      },
+      {
+        "name": "Lockfile present",
+        "ok": false,
+        "fix": "Pin dependency versions with a lockfile."
+      },
+      {
+        "name": "Runtime version pinned",
+        "ok": true,
+        "fix": "Add .python-version / .nvmrc / engines / toolchain."
+      },
+      {
+        "name": "Init script exists (init.sh/Makefile/...)",
+        "ok": false,
+        "fix": "Create init.sh: install → verify baseline → print the run-app command."
+      },
+      {
+        "name": "Reproducible environment (container or .env.example)",
+        "ok": false,
+        "fix": "Add .env.example (and a Dockerfile/devcontainer if needed)."
+      }
+    ],
+    "State": [
+      {
+        "name": "Uses git",
+        "ok": true,
+        "fix": "git init — checkpoints and evidence require commits."
+      },
+      {
+        "name": "Progress file exists (PROGRESS.md)",
+        "ok": false,
+        "fix": "Create PROGRESS.md: Current state / Done / In progress / Issues / Next steps."
+      },
+      {
+        "name": "Progress has 'next steps'",
+        "ok": false,
+        "fix": "Add a Next steps section so the next session knows where to start."
+      },
+      {
+        "name": "Valid feature list (machine-readable)",
+        "ok": false,
+        "fix": "Create feature_list.json: each entry has id, behavior, verification (command), status."
+      },
+      {
+        "name": "Decision log exists",
+        "ok": false,
+        "fix": "Create docs/DECISIONS.md (what, why, when)."
+      }
+    ],
+    "Feedback": [
+      {
+        "name": "Test files exist",
+        "ok": true,
+        "fix": "Write tests, starting with characterization tests for hotspots."
+      },
+      {
+        "name": "Test/code file ratio ≥ 10%",
+        "ok": true,
+        "fix": "Currently 1/3 — increase coverage of critical modules."
+      },
+      {
+        "name": "CI exists",
+        "ok": false,
+        "fix": "Run check in CI so evidence does not depend on a personal machine."
+      },
+      {
+        "name": "End-to-end layer exists",
+        "ok": false,
+        "fix": "Add at least one e2e flow for the golden journey."
+      },
+      {
+        "name": "Architecture boundaries machine-checked",
+        "ok": false,
+        "fix": "Turn architecture rules into automated checks (.harness/rules.json, import-linter, dependency-cruiser)."
+      }
+    ]
+  },
+  "retrofitted": {
+    "Instructions": [
+      {
+        "name": "Agent instruction file exists (AGENTS.md/CLAUDE.md)",
+        "ok": true,
+        "fix": "Create a ~100-line AGENTS.md: overview, standard commands, hard constraints, docs map."
+      },
+      {
+        "name": "Instruction file ≤ 200 lines (a router, not an encyclopedia)",
+        "ok": true,
+        "fix": "Split AGENTS.md (74 lines) into a router + docs/<topic>.md."
+      },
+      {
+        "name": "Lists verification commands",
+        "ok": true,
+        "fix": "State the test/lint/type-check/full-check commands explicitly in the instruction file."
+      },
+      {
+        "name": "Points to topic docs in docs/",
+        "ok": true,
+        "fix": "Add a 'Docs map' section linking docs/<topic>.md + when to read each."
+      },
+      {
+        "name": "Architecture doc exists",
+        "ok": true,
+        "fix": "Write docs/ARCHITECTURE.md: module map, dependency direction, boundaries."
+      }
+    ],
+    "Tools": [
+      {
+        "name": "Setup command detected",
+        "ok": true,
+        "fix": "Declare the dependency install command."
+      },
+      {
+        "name": "Test command",
+        "ok": true,
+        "fix": "Add a test runner and a test command."
+      },
+      {
+        "name": "Static checks (lint and/or type-check)",
+        "ok": true,
+        "fix": "Add a linter (ruff/eslint/golangci/...) or type-checking (mypy/pyright/tsc --noEmit/...)."
+      },
+      {
+        "name": "Agent permissions scoped (least privilege)",
+        "ok": false,
+        "fix": "Scope the agent's permissions in its own config (allow the verification commands, deny force-push and reading .env); for Claude Code, `harness retrofit --claude` generates it (opt-in)."
+      },
+      {
+        "name": "Single overall verification command (check)",
+        "ok": true,
+        "fix": "Create one entry point that runs all verification (scripts/harness.py check or make check)."
+      }
+    ],
+    "Environment": [
+      {
+        "name": "Stack detected",
+        "ok": true,
+        "fix": "Add a standard manifest (pyproject.toml, package.json, ...)."
+      },
+      {
+        "name": "Lockfile present",
+        "ok": false,
+        "fix": "Pin dependency versions with a lockfile."
+      },
+      {
+        "name": "Runtime version pinned",
+        "ok": true,
+        "fix": "Add .python-version / .nvmrc / engines / toolchain."
+      },
+      {
+        "name": "Init script exists (init.sh/Makefile/...)",
+        "ok": true,
+        "fix": "Create init.sh: install → verify baseline → print the run-app command."
+      },
+      {
+        "name": "Reproducible environment (container or .env.example)",
+        "ok": false,
+        "fix": "Add .env.example (and a Dockerfile/devcontainer if needed)."
+      }
+    ],
+    "State": [
+      {
+        "name": "Uses git",
+        "ok": true,
+        "fix": "git init — checkpoints and evidence require commits."
+      },
+      {
+        "name": "Progress file exists (PROGRESS.md)",
+        "ok": true,
+        "fix": "Create PROGRESS.md: Current state / Done / In progress / Issues / Next steps."
+      },
+      {
+        "name": "Progress has 'next steps'",
+        "ok": true,
+        "fix": "Add a Next steps section so the next session knows where to start."
+      },
+      {
+        "name": "Valid feature list (machine-readable)",
+        "ok": true,
+        "fix": "Create feature_list.json: each entry has id, behavior, verification (command), status."
+      },
+      {
+        "name": "Decision log exists",
+        "ok": true,
+        "fix": "Create docs/DECISIONS.md (what, why, when)."
+      }
+    ],
+    "Feedback": [
+      {
+        "name": "Test files exist",
+        "ok": true,
+        "fix": "Write tests, starting with characterization tests for hotspots."
+      },
+      {
+        "name": "Test/code file ratio ≥ 10%",
+        "ok": true,
+        "fix": "Currently 1/3 — increase coverage of critical modules."
+      },
+      {
+        "name": "CI exists",
+        "ok": false,
+        "fix": "Run check in CI so evidence does not depend on a personal machine."
+      },
+      {
+        "name": "End-to-end layer exists",
+        "ok": false,
+        "fix": "Add at least one e2e flow for the golden journey."
+      },
+      {
+        "name": "Architecture boundaries machine-checked",
+        "ok": true,
+        "fix": "Turn architecture rules into automated checks (.harness/rules.json, import-linter, dependency-cruiser)."
+      }
+    ]
+  },
+  "degraded": {
+    "Instructions": [
+      {
+        "name": "Agent instruction file exists (AGENTS.md/CLAUDE.md)",
+        "ok": true,
+        "fix": "Create a ~100-line AGENTS.md: overview, standard commands, hard constraints, docs map."
+      },
+      {
+        "name": "Instruction file ≤ 200 lines (a router, not an encyclopedia)",
+        "ok": false,
+        "fix": "Split AGENTS.md (250 lines) into a router + docs/<topic>.md."
+      },
+      {
+        "name": "Lists verification commands",
+        "ok": false,
+        "fix": "State the test/lint/type-check/full-check commands explicitly in the instruction file."
+      },
+      {
+        "name": "Points to topic docs in docs/",
+        "ok": false,
+        "fix": "Add a 'Docs map' section linking docs/<topic>.md + when to read each."
+      },
+      {
+        "name": "Architecture doc exists",
+        "ok": true,
+        "fix": "Write docs/ARCHITECTURE.md: module map, dependency direction, boundaries."
+      }
+    ],
+    "Tools": [
+      {
+        "name": "Setup command detected",
+        "ok": true,
+        "fix": "Declare the dependency install command."
+      },
+      {
+        "name": "Test command",
+        "ok": true,
+        "fix": "Add a test runner and a test command."
+      },
+      {
+        "name": "Static checks (lint and/or type-check)",
+        "ok": true,
+        "fix": "Add a linter (ruff/eslint/golangci/...) or type-checking (mypy/pyright/tsc --noEmit/...)."
+      },
+      {
+        "name": "Agent permissions scoped (least privilege)",
+        "ok": false,
+        "fix": "Scope the agent's permissions in its own config (allow the verification commands, deny force-push and reading .env); for Claude Code, `harness retrofit --claude` generates it (opt-in)."
+      },
+      {
+        "name": "Single overall verification command (check)",
+        "ok": true,
+        "fix": "Create one entry point that runs all verification (scripts/harness.py check or make check)."
+      }
+    ],
+    "Environment": [
+      {
+        "name": "Stack detected",
+        "ok": true,
+        "fix": "Add a standard manifest (pyproject.toml, package.json, ...)."
+      },
+      {
+        "name": "Lockfile present",
+        "ok": false,
+        "fix": "Pin dependency versions with a lockfile."
+      },
+      {
+        "name": "Runtime version pinned",
+        "ok": true,
+        "fix": "Add .python-version / .nvmrc / engines / toolchain."
+      },
+      {
+        "name": "Init script exists (init.sh/Makefile/...)",
+        "ok": true,
+        "fix": "Create init.sh: install → verify baseline → print the run-app command."
+      },
+      {
+        "name": "Reproducible environment (container or .env.example)",
+        "ok": false,
+        "fix": "Add .env.example (and a Dockerfile/devcontainer if needed)."
+      }
+    ],
+    "State": [
+      {
+        "name": "Uses git",
+        "ok": true,
+        "fix": "git init — checkpoints and evidence require commits."
+      },
+      {
+        "name": "Progress file exists (PROGRESS.md)",
+        "ok": true,
+        "fix": "Create PROGRESS.md: Current state / Done / In progress / Issues / Next steps."
+      },
+      {
+        "name": "Progress has 'next steps'",
+        "ok": true,
+        "fix": "Add a Next steps section so the next session knows where to start."
+      },
+      {
+        "name": "Valid feature list (machine-readable)",
+        "ok": false,
+        "fix": "Fix the feature list: item #0 (H001): passing but has no evidence — only `verify` may mark a feature passing"
+      },
+      {
+        "name": "Decision log exists",
+        "ok": true,
+        "fix": "Create docs/DECISIONS.md (what, why, when)."
+      }
+    ],
+    "Feedback": [
+      {
+        "name": "Test files exist",
+        "ok": true,
+        "fix": "Write tests, starting with characterization tests for hotspots."
+      },
+      {
+        "name": "Test/code file ratio ≥ 10%",
+        "ok": true,
+        "fix": "Currently 1/3 — increase coverage of critical modules."
+      },
+      {
+        "name": "CI exists",
+        "ok": false,
+        "fix": "Run check in CI so evidence does not depend on a personal machine."
+      },
+      {
+        "name": "End-to-end layer exists",
+        "ok": false,
+        "fix": "Add at least one e2e flow for the golden journey."
+      },
+      {
+        "name": "Architecture boundaries machine-checked",
+        "ok": true,
+        "fix": "Turn architecture rules into automated checks (.harness/rules.json, import-linter, dependency-cruiser)."
+      }
+    ]
+  },
+  "misc": {
+    "Instructions": [
+      {
+        "name": "Agent instruction file exists (AGENTS.md/CLAUDE.md)",
+        "ok": true,
+        "fix": "Create a ~100-line AGENTS.md: overview, standard commands, hard constraints, docs map."
+      },
+      {
+        "name": "Instruction file ≤ 200 lines (a router, not an encyclopedia)",
+        "ok": true,
+        "fix": "Split .cursorrules (1 lines) into a router + docs/<topic>.md."
+      },
+      {
+        "name": "Lists verification commands",
+        "ok": false,
+        "fix": "State the test/lint/type-check/full-check commands explicitly in the instruction file."
+      },
+      {
+        "name": "Points to topic docs in docs/",
+        "ok": false,
+        "fix": "Add a 'Docs map' section linking docs/<topic>.md + when to read each."
+      },
+      {
+        "name": "Architecture doc exists",
+        "ok": false,
+        "fix": "Write docs/ARCHITECTURE.md: module map, dependency direction, boundaries."
+      }
+    ],
+    "Tools": [
+      {
+        "name": "Setup command detected",
+        "ok": true,
+        "fix": "Declare the dependency install command."
+      },
+      {
+        "name": "Test command",
+        "ok": true,
+        "fix": "Add a test runner and a test command."
+      },
+      {
+        "name": "Static checks (lint and/or type-check)",
+        "ok": false,
+        "fix": "Add a linter (ruff/eslint/golangci/...) or type-checking (mypy/pyright/tsc --noEmit/...)."
+      },
+      {
+        "name": "Agent permissions scoped (least privilege)",
+        "ok": true,
+        "fix": "Scope the agent's permissions in its own config (allow the verification commands, deny force-push and reading .env); for Claude Code, `harness retrofit --claude` generates it (opt-in)."
+      },
+      {
+        "name": "Single overall verification command (check)",
+        "ok": true,
+        "fix": "Create one entry point that runs all verification (scripts/harness.py check or make check)."
+      }
+    ],
+    "Environment": [
+      {
+        "name": "Stack detected",
+        "ok": true,
+        "fix": "Add a standard manifest (pyproject.toml, package.json, ...)."
+      },
+      {
+        "name": "Lockfile present",
+        "ok": true,
+        "fix": "Pin dependency versions with a lockfile."
+      },
+      {
+        "name": "Runtime version pinned",
+        "ok": false,
+        "fix": "Add .python-version / .nvmrc / engines / toolchain."
+      },
+      {
+        "name": "Init script exists (init.sh/Makefile/...)",
+        "ok": true,
+        "fix": "Create init.sh: install → verify baseline → print the run-app command."
+      },
+      {
+        "name": "Reproducible environment (container or .env.example)",
+        "ok": true,
+        "fix": "Add .env.example (and a Dockerfile/devcontainer if needed)."
+      }
+    ],
+    "State": [
+      {
+        "name": "Uses git",
+        "ok": false,
+        "fix": "git init — checkpoints and evidence require commits."
+      },
+      {
+        "name": "Progress file exists (PROGRESS.md)",
+        "ok": false,
+        "fix": "Create PROGRESS.md: Current state / Done / In progress / Issues / Next steps."
+      },
+      {
+        "name": "Progress has 'next steps'",
+        "ok": false,
+        "fix": "Add a Next steps section so the next session knows where to start."
+      },
+      {
+        "name": "Valid feature list (machine-readable)",
+        "ok": false,
+        "fix": "Fix the feature list: feature list is not valid JSON: Expecting value: line 1 column 1 (char 0)"
+      },
+      {
+        "name": "Decision log exists",
+        "ok": false,
+        "fix": "Create docs/DECISIONS.md (what, why, when)."
+      }
+    ],
+    "Feedback": [
+      {
+        "name": "Test files exist",
+        "ok": false,
+        "fix": "Write tests, starting with characterization tests for hotspots."
+      },
+      {
+        "name": "Test/code file ratio ≥ 10%",
+        "ok": false,
+        "fix": "Currently 0/0 — increase coverage of critical modules."
+      },
+      {
+        "name": "CI exists",
+        "ok": true,
+        "fix": "Run check in CI so evidence does not depend on a personal machine."
+      },
+      {
+        "name": "End-to-end layer exists",
+        "ok": false,
+        "fix": "Add at least one e2e flow for the golden journey."
+      },
+      {
+        "name": "Architecture boundaries machine-checked",
+        "ok": true,
+        "fix": "Turn architecture rules into automated checks (.harness/rules.json, import-linter, dependency-cruiser)."
+      }
+    ]
+  }
+}

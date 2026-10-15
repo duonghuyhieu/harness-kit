@@ -1,0 +1,7 @@
+__pycache__/
+*.pyc
+*.egg-info/
+.venv/
+.harness-audit-before.md
+.playwright-mcp/
+node_modules/

@@ -1,0 +1,560 @@
+{
+  "python_minimal": {
+    "create": [
+      [
+        "AGENTS.md",
+        "792264a148ca138b"
+      ],
+      [
+        "PROGRESS.md",
+        "575d98bbd7e7000a"
+      ],
+      [
+        "init.sh",
+        "2c21cc8227c9f72a"
+      ],
+      [
+        "init.ps1",
+        "3a1efcff0d688ca7"
+      ],
+      [
+        "docs/DECISIONS.md",
+        "c972229ae6bf6229"
+      ],
+      [
+        ".harness/config.json",
+        "36e418f8f90f1633"
+      ],
+      [
+        "feature_list.json",
+        "946d199611abf7c4"
+      ],
+      [
+        ".harness/rules.json",
+        "d58eb73fddfb34b4"
+      ],
+      [
+        ".harness/.gitignore",
+        "844581a2bfaf95d1"
+      ],
+      [
+        "scripts/harness.py",
+        "<verbatim runtime.py>"
+      ],
+      [
+        ".gitattributes",
+        "187bb3eeb1ac1b0d"
+      ]
+    ],
+    "proposals": [
+      [
+        "CLAUDE.md",
+        "8625eec1296a9d66"
+      ]
+    ],
+    "skipped": [],
+    "notes": [
+      "Legacy instructions found: CLAUDE.md → feature H005 requires merging them into AGENTS.md + docs/.",
+      "Missing .gitignore in the project root."
+    ]
+  },
+  "python_standard": {
+    "create": [
+      [
+        "AGENTS.md",
+        "97364a346f2b5b6d"
+      ],
+      [
+        "PROGRESS.md",
+        "7a09da983306d568"
+      ],
+      [
+        "init.sh",
+        "2c21cc8227c9f72a"
+      ],
+      [
+        "init.ps1",
+        "3a1efcff0d688ca7"
+      ],
+      [
+        "docs/DECISIONS.md",
+        "c972229ae6bf6229"
+      ],
+      [
+        "docs/ARCHITECTURE.md",
+        "28a6357ae65d1ce6"
+      ],
+      [
+        "docs/PRODUCT.md",
+        "39873c64e58d926b"
+      ],
+      [
+        "docs/QUALITY.md",
+        "c030b610a9e90105"
+      ],
+      [
+        "docs/RELIABILITY.md",
+        "019501cd879248de"
+      ],
+      [
+        "docs/harness/clean-state-checklist.md",
+        "a1c583efd2b99dee"
+      ],
+      [
+        "docs/harness/session-handoff.md",
+        "cf9ee665b610a436"
+      ],
+      [
+        "docs/harness/evaluator-rubric.md",
+        "3d5184d6599fe557"
+      ],
+      [
+        "docs/harness/sprint-contract.md",
+        "90830cf9bcb33581"
+      ],
+      [
+        "docs/harness/legacy-refactor-playbook.md",
+        "d6ac4fd78b61a548"
+      ],
+      [
+        ".harness/config.json",
+        "36e418f8f90f1633"
+      ],
+      [
+        "feature_list.json",
+        "946d199611abf7c4"
+      ],
+      [
+        ".harness/rules.json",
+        "d58eb73fddfb34b4"
+      ],
+      [
+        ".harness/.gitignore",
+        "844581a2bfaf95d1"
+      ],
+      [
+        "scripts/harness.py",
+        "<verbatim runtime.py>"
+      ],
+      [
+        ".gitattributes",
+        "187bb3eeb1ac1b0d"
+      ]
+    ],
+    "proposals": [
+      [
+        "CLAUDE.md",
+        "8625eec1296a9d66"
+      ]
+    ],
+    "skipped": [],
+    "notes": [
+      "Legacy instructions found: CLAUDE.md → feature H005 requires merging them into AGENTS.md + docs/.",
+      "Missing .gitignore in the project root."
+    ]
+  },
+  "python_full": {
+    "create": [
+      [
+        "AGENTS.md",
+        "65014b68ce928cad"
+      ],
+      [
+        "PROGRESS.md",
+        "7a09da983306d568"
+      ],
+      [
+        "init.sh",
+        "2c21cc8227c9f72a"
+      ],
+      [
+        "init.ps1",
+        "3a1efcff0d688ca7"
+      ],
+      [
+        "docs/DECISIONS.md",
+        "c972229ae6bf6229"
+      ],
+      [
+        "docs/ARCHITECTURE.md",
+        "28a6357ae65d1ce6"
+      ],
+      [
+        "docs/PRODUCT.md",
+        "39873c64e58d926b"
+      ],
+      [
+        "docs/QUALITY.md",
+        "c030b610a9e90105"
+      ],
+      [
+        "docs/RELIABILITY.md",
+        "019501cd879248de"
+      ],
+      [
+        "docs/harness/clean-state-checklist.md",
+        "a1c583efd2b99dee"
+      ],
+      [
+        "docs/harness/session-handoff.md",
+        "cf9ee665b610a436"
+      ],
+      [
+        "docs/harness/evaluator-rubric.md",
+        "3d5184d6599fe557"
+      ],
+      [
+        "docs/harness/sprint-contract.md",
+        "90830cf9bcb33581"
+      ],
+      [
+        "docs/harness/legacy-refactor-playbook.md",
+        "d6ac4fd78b61a548"
+      ],
+      [
+        "docs/SECURITY.md",
+        "d654105c5e9da563"
+      ],
+      [
+        "docs/harness/goal-template.md",
+        "f8cb85d467d495a3"
+      ],
+      [
+        "docs/harness/loop-state-template.md",
+        "96f691db5912e45f"
+      ],
+      [
+        "docs/exec-plans/active/index.md",
+        "ff99b99add0903f8"
+      ],
+      [
+        "docs/exec-plans/completed/index.md",
+        "c774b9b7349183c1"
+      ],
+      [
+        "docs/exec-plans/tech-debt-tracker.md",
+        "3e5bf0bd7e8b47ae"
+      ],
+      [
+        ".harness/config.json",
+        "36e418f8f90f1633"
+      ],
+      [
+        "feature_list.json",
+        "946d199611abf7c4"
+      ],
+      [
+        ".harness/rules.json",
+        "d58eb73fddfb34b4"
+      ],
+      [
+        ".harness/.gitignore",
+        "844581a2bfaf95d1"
+      ],
+      [
+        "scripts/harness.py",
+        "<verbatim runtime.py>"
+      ],
+      [
+        ".gitattributes",
+        "187bb3eeb1ac1b0d"
+      ]
+    ],
+    "proposals": [
+      [
+        "CLAUDE.md",
+        "8625eec1296a9d66"
+      ]
+    ],
+    "skipped": [],
+    "notes": [
+      "Legacy instructions found: CLAUDE.md → feature H005 requires merging them into AGENTS.md + docs/.",
+      "Missing .gitignore in the project root."
+    ]
+  },
+  "node_no_git": {
+    "create": [
+      [
+        "AGENTS.md",
+        "42b5440057384751"
+      ],
+      [
+        "CLAUDE.md",
+        "8625eec1296a9d66"
+      ],
+      [
+        "PROGRESS.md",
+        "7a09da983306d568"
+      ],
+      [
+        "init.sh",
+        "2c21cc8227c9f72a"
+      ],
+      [
+        "init.ps1",
+        "3a1efcff0d688ca7"
+      ],
+      [
+        "docs/DECISIONS.md",
+        "c972229ae6bf6229"
+      ],
+      [
+        "docs/ARCHITECTURE.md",
+        "1e73fb67c6d04543"
+      ],
+      [
+        "docs/PRODUCT.md",
+        "39873c64e58d926b"
+      ],
+      [
+        "docs/QUALITY.md",
+        "1cfb5b8b1d372b65"
+      ],
+      [
+        "docs/RELIABILITY.md",
+        "5f93f64557689cfe"
+      ],
+      [
+        "docs/harness/clean-state-checklist.md",
+        "a1c583efd2b99dee"
+      ],
+      [
+        "docs/harness/session-handoff.md",
+        "cf9ee665b610a436"
+      ],
+      [
+        "docs/harness/evaluator-rubric.md",
+        "3d5184d6599fe557"
+      ],
+      [
+        "docs/harness/sprint-contract.md",
+        "90830cf9bcb33581"
+      ],
+      [
+        "docs/harness/legacy-refactor-playbook.md",
+        "d6ac4fd78b61a548"
+      ],
+      [
+        ".harness/config.json",
+        "06ad9e0fd00fe330"
+      ],
+      [
+        "feature_list.json",
+        "38f557ee35d17419"
+      ],
+      [
+        ".harness/rules.json",
+        "d58eb73fddfb34b4"
+      ],
+      [
+        ".harness/.gitignore",
+        "844581a2bfaf95d1"
+      ],
+      [
+        "scripts/harness.py",
+        "<verbatim runtime.py>"
+      ],
+      [
+        ".gitattributes",
+        "187bb3eeb1ac1b0d"
+      ]
+    ],
+    "proposals": [],
+    "skipped": [],
+    "notes": [
+      "Project does not use git: the harness needs git for checkpoints/evidence. Use --git-init.",
+      "No test command found: feedback is the weakest link — feature H002 must add one.",
+      "Missing .gitignore in the project root."
+    ]
+  },
+  "empty": {
+    "create": [
+      [
+        "AGENTS.md",
+        "03213ab3fdbcc715"
+      ],
+      [
+        "CLAUDE.md",
+        "8625eec1296a9d66"
+      ],
+      [
+        "PROGRESS.md",
+        "7a09da983306d568"
+      ],
+      [
+        "init.sh",
+        "2c21cc8227c9f72a"
+      ],
+      [
+        "init.ps1",
+        "3a1efcff0d688ca7"
+      ],
+      [
+        "docs/DECISIONS.md",
+        "c972229ae6bf6229"
+      ],
+      [
+        "docs/ARCHITECTURE.md",
+        "3fd46438fbcc6364"
+      ],
+      [
+        "docs/PRODUCT.md",
+        "39873c64e58d926b"
+      ],
+      [
+        "docs/QUALITY.md",
+        "1cfb5b8b1d372b65"
+      ],
+      [
+        "docs/RELIABILITY.md",
+        "019501cd879248de"
+      ],
+      [
+        "docs/harness/clean-state-checklist.md",
+        "a1c583efd2b99dee"
+      ],
+      [
+        "docs/harness/session-handoff.md",
+        "cf9ee665b610a436"
+      ],
+      [
+        "docs/harness/evaluator-rubric.md",
+        "3d5184d6599fe557"
+      ],
+      [
+        "docs/harness/sprint-contract.md",
+        "90830cf9bcb33581"
+      ],
+      [
+        "docs/harness/legacy-refactor-playbook.md",
+        "d6ac4fd78b61a548"
+      ],
+      [
+        ".harness/config.json",
+        "0ccde25d800b1a6a"
+      ],
+      [
+        "feature_list.json",
+        "38f557ee35d17419"
+      ],
+      [
+        ".harness/rules.json",
+        "d58eb73fddfb34b4"
+      ],
+      [
+        ".harness/.gitignore",
+        "844581a2bfaf95d1"
+      ],
+      [
+        "scripts/harness.py",
+        "<verbatim runtime.py>"
+      ],
+      [
+        ".gitattributes",
+        "187bb3eeb1ac1b0d"
+      ]
+    ],
+    "proposals": [],
+    "skipped": [],
+    "notes": [
+      "Project does not use git: the harness needs git for checkpoints/evidence. Use --git-init.",
+      "No stack detected: fill in commands in .harness/config.json by hand.",
+      "No test command found: feedback is the weakest link — feature H002 must add one.",
+      "Missing .gitignore in the project root."
+    ]
+  },
+  "existing_files": {
+    "create": [
+      [
+        "init.sh",
+        "2c21cc8227c9f72a"
+      ],
+      [
+        "init.ps1",
+        "3a1efcff0d688ca7"
+      ],
+      [
+        "docs/DECISIONS.md",
+        "c972229ae6bf6229"
+      ],
+      [
+        "docs/ARCHITECTURE.md",
+        "662f70819828be58"
+      ],
+      [
+        "docs/PRODUCT.md",
+        "39873c64e58d926b"
+      ],
+      [
+        "docs/QUALITY.md",
+        "c030b610a9e90105"
+      ],
+      [
+        "docs/RELIABILITY.md",
+        "019501cd879248de"
+      ],
+      [
+        "docs/harness/clean-state-checklist.md",
+        "a1c583efd2b99dee"
+      ],
+      [
+        "docs/harness/session-handoff.md",
+        "cf9ee665b610a436"
+      ],
+      [
+        "docs/harness/evaluator-rubric.md",
+        "3d5184d6599fe557"
+      ],
+      [
+        "docs/harness/sprint-contract.md",
+        "90830cf9bcb33581"
+      ],
+      [
+        "docs/harness/legacy-refactor-playbook.md",
+        "d6ac4fd78b61a548"
+      ],
+      [
+        ".harness/config.json",
+        "050191826b04e982"
+      ],
+      [
+        ".harness/rules.json",
+        "d58eb73fddfb34b4"
+      ],
+      [
+        ".harness/.gitignore",
+        "844581a2bfaf95d1"
+      ],
+      [
+        "scripts/harness.py",
+        "<verbatim runtime.py>"
+      ]
+    ],
+    "proposals": [
+      [
+        "AGENTS.md",
+        "97364a346f2b5b6d"
+      ],
+      [
+        "CLAUDE.md",
+        "8625eec1296a9d66"
+      ],
+      [
+        "feature_list.json",
+        "946d199611abf7c4"
+      ],
+      [
+        ".gitattributes",
+        "4242866ea4ce3d4c"
+      ]
+    ],
+    "skipped": [
+      "PROGRESS.md (using existing claude-progress.md)"
+    ],
+    "notes": [
+      "feature_list.json already exists: kept as is; the proposed harness features are in .harness/proposals/feature_list.json — merge by hand (the runtime also accepts the legacy schema).",
+      ".gitattributes does not pin the harness scripts' line endings: under core.autocrlf, init.sh and scripts/harness.py may be checked out with CRLF and fail in bash. Merge .harness/proposals/gitattributes.proposed into .gitattributes, then run `git add --renormalize .`.",
+      "Legacy instructions found: CLAUDE.md → feature H005 requires merging them into AGENTS.md + docs/."
+    ]
+  }
+}
