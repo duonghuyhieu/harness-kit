@@ -30,19 +30,41 @@ def _python(python: str | None) -> str:
     return python or scaffold.detect_python()
 
 
+# Claude Code versions (R21): the hooks were verified on TESTED_CLAUDE; `onFailure: "block"` needs ONFAILURE_CLAUDE
+TESTED_CLAUDE = (2, 1, 287)
+ONFAILURE_CLAUDE = (2, 1, 295)
+
+
+def claude_version() -> tuple[int, ...] | None:
+    exe = shutil.which("claude")
+    if not exe:
+        return None
+    try:
+        out = subprocess.run([exe, "--version"], capture_output=True, text=True, timeout=30).stdout
+    except (OSError, subprocess.SubprocessError):
+        return None
+    m = re.search(r"(\d+)\.(\d+)\.(\d+)", out or "")
+    return tuple(int(x) for x in m.groups()) if m else None
+
+
+def _v(t: tuple[int, ...]) -> str:
+    return ".".join(map(str, t))
+
+
 def install(root: Path, level: str = "standard", python: str | None = None, statusline: bool = True,
-            force: bool = False, dry_run: bool = False, git_init: bool = False, commit: bool = False) -> str:
+            force: bool = False, dry_run: bool = False, git_init: bool = False, commit: bool = False,
+            diff: bool = False) -> str:
     root = root.resolve()
     if not root.is_dir():
         raise SystemExit(f"ERROR: {root} is not a directory.")
     manifest = scaffold._read_manifest(root)
     if manifest:  # installed before: re-running the install command is the documented way to update
         py = python or manifest.get("python") or _python(None)
-        out = update(root, python=py, statusline=statusline, force=force, dry_run=dry_run)
+        out = update(root, python=py, statusline=statusline, force=force, dry_run=dry_run, diff=diff)
         return out if dry_run else out + _done(root, py, verb="updated")
     py = _python(python)
     out = scaffold.retrofit(root, level=level, dry_run=dry_run, git_init=git_init, commit=commit, claude=True,
-                            python=py, statusline=statusline, force=force)
+                            python=py, statusline=statusline, force=force, diff=diff)
     out = _condense(out.split("\n\nNext steps:")[0])
     if dry_run:
         return out
@@ -96,7 +118,7 @@ def _condense(summary: str) -> str:
 
 
 def update(root: Path, python: str | None = None, statusline: bool = True, force: bool = False,
-           dry_run: bool = False) -> str:
+           dry_run: bool = False, diff: bool = False) -> str:
     """Refresh the harness-managed parts only; never touches project content."""
     root = root.resolve()
     manifest = scaffold._read_manifest(root)
@@ -110,7 +132,7 @@ def update(root: Path, python: str | None = None, statusline: bool = True, force
     scaffold._plan_harness_gitignore(plan)
     scaffold._plan_runtime(plan, upgrade_runtime=True)
     if dry_run:
-        return plan.summary(dry_run=True)
+        return plan.summary(dry_run=True, diff=diff)
     plan.apply()
     return plan.summary(dry_run=False) + f"\n\nUpdated harness-kit {manifest.get('version')} -> {VERSION}."
 
@@ -149,7 +171,8 @@ def uninstall(root: Path, dry_run: bool = False) -> str:
             current = None
             lines.append("! .claude/settings.json is not valid JSON: left untouched; remove the harness hooks by hand.")
         if isinstance(current, dict):
-            new_settings = scaffold.strip_claude_settings(current, manifest.get("settings_added", {}))
+            new_settings = scaffold.strip_claude_settings(current, manifest.get("settings_added", {}),
+                                                          schema_added=bool(manifest.get("schema_added")))
     dispatcher = ".claude/hooks/harness_hook.py"
     if dispatcher in removed and settings_p.is_file() and (new_settings is None or _has_harness_hooks(new_settings)):
         # hooks that still point at the dispatcher would fail (exit 2 blocks every prompt): keep it until they are gone
@@ -267,8 +290,10 @@ def doctor(root: Path) -> tuple[int, str]:
         missing_events = [ev for ev, _, _ in scaffold.HOOK_EVENTS
                           if not any(scaffold._is_harness_hook(h) for e in hooks.get(ev, []) if isinstance(e, dict)
                                      for h in e.get("hooks", []) if isinstance(e.get("hooks"), list))]
-        add("OK" if not missing_events else "FAIL", "hooks registered",
-            "all events" if not missing_events else "missing: " + ", ".join(missing_events))
+        # some events missing: usually removed on purpose (update keeps that); none at all: the harness is off
+        status = "OK" if not missing_events else "FAIL" if len(missing_events) == len(scaffold.HOOK_EVENTS) else "WARN"
+        add(status, "hooks registered", "all events" if not missing_events else "missing: " + ", ".join(missing_events)
+            + " — restore with the install command plus --force")
         sl = settings.get("statusLine")
         add("OK" if scaffold._is_harness_statusline(sl) else "INFO", "status line",
             "harness status line" if scaffold._is_harness_statusline(sl) else "not the harness one (yours is kept)")
@@ -299,15 +324,16 @@ def doctor(root: Path) -> tuple[int, str]:
         add("OK" if ok else "FAIL", "session-start smoke", "context injected" if ok else out.strip()[:200])
     elif not dispatcher.is_file():
         add("FAIL", "hook dispatcher", ".claude/hooks/harness_hook.py missing")
-    claude = shutil.which("claude")
-    if claude:
-        try:
-            ver = subprocess.run([claude, "--version"], capture_output=True, text=True, timeout=30).stdout.strip()
-        except (OSError, subprocess.SubprocessError):
-            ver = "?"
-        add("INFO", "claude CLI", ver or "?")
+    ver = claude_version()
+    if ver is None:
+        add("INFO", "claude CLI", "not on PATH or version unknown (only `harness.py loop` needs it)")
     else:
-        add("INFO", "claude CLI", "not on PATH (only needed for `harness.py loop`)")
+        older = ver < TESTED_CLAUDE
+        add("WARN" if older else "OK", "claude CLI",
+            f"{_v(ver)}" + (f" — older than {_v(TESTED_CLAUDE)}, the version the hooks were verified on: update "
+                            f"Claude Code" if older else f" (hooks verified on {_v(TESTED_CLAUDE)})")
+            + ("" if ver >= ONFAILURE_CLAUDE else f"; hook `onFailure: \"block\"` needs {_v(ONFAILURE_CLAUDE)}+ "
+               f"(the harness guard uses its own `guard_failure` setting instead)"))
     width = max(len(r[1]) for r in rows)
     report = "\n".join(f"[{s:4}] {i.ljust(width)}  {d}" for s, i, d in rows)
     bad = sum(1 for s, _, _ in rows if s == "FAIL")

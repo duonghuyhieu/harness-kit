@@ -17,9 +17,9 @@
         "fix": "State the test/lint/type-check/full-check commands explicitly in the instruction file."
       },
       {
-        "name": "Points to topic docs in docs/",
+        "name": "Points to topic docs in docs/, no unfilled placeholders",
         "ok": false,
-        "fix": "Add a 'Docs map' section linking docs/<topic>.md + when to read each."
+        "fix": "Add a 'Docs map' section linking docs/<topic>.md + when to read each, and fill in every HARNESS:FILL placeholder (run /hk-init)."
       },
       {
         "name": "Architecture doc exists",
@@ -154,9 +154,9 @@
         "fix": "State the test/lint/type-check/full-check commands explicitly in the instruction file."
       },
       {
-        "name": "Points to topic docs in docs/",
-        "ok": true,
-        "fix": "Add a 'Docs map' section linking docs/<topic>.md + when to read each."
+        "name": "Points to topic docs in docs/, no unfilled placeholders",
+        "ok": false,
+        "fix": "Add a 'Docs map' section linking docs/<topic>.md + when to read each, and fill in every HARNESS:FILL placeholder (run /hk-init)."
       },
       {
         "name": "Architecture doc exists",
@@ -291,9 +291,9 @@
         "fix": "State the test/lint/type-check/full-check commands explicitly in the instruction file."
       },
       {
-        "name": "Points to topic docs in docs/",
+        "name": "Points to topic docs in docs/, no unfilled placeholders",
         "ok": false,
-        "fix": "Add a 'Docs map' section linking docs/<topic>.md + when to read each."
+        "fix": "Add a 'Docs map' section linking docs/<topic>.md + when to read each, and fill in every HARNESS:FILL placeholder (run /hk-init)."
       },
       {
         "name": "Architecture doc exists",
@@ -428,9 +428,9 @@
         "fix": "State the test/lint/type-check/full-check commands explicitly in the instruction file."
       },
       {
-        "name": "Points to topic docs in docs/",
+        "name": "Points to topic docs in docs/, no unfilled placeholders",
         "ok": false,
-        "fix": "Add a 'Docs map' section linking docs/<topic>.md + when to read each."
+        "fix": "Add a 'Docs map' section linking docs/<topic>.md + when to read each, and fill in every HARNESS:FILL placeholder (run /hk-init)."
       },
       {
         "name": "Architecture doc exists",

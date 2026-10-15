@@ -88,8 +88,12 @@ Ba quy tắc cốt lõi:
 | SessionEnd | ghi nhận phiên kết thúc có handoff hay không |
 
 Hook là rào chắn rẻ, không phải cổng: thiếu Python hoặc runtime thì hook bỏ qua (exit 0) kèm ghi chú. Cổng thật là
-`verify` và `exit-check`. Tắt hook cho một phiên: `HARNESS_HOOKS=off`. Đổi chế độ kiểm tra scope trong
-`.harness/config.json`: `"scope_guard": "ask" | "deny" | "off"`. Nên bật thêm sandbox của chính Claude Code để
+`verify` và `exit-check`. Khi hook bị lỗi, Claude Code hiện cảnh báo (`systemMessage`); muốn guard lỗi thì *từ chối*
+thay vì cho qua, đặt `"guard_failure": "closed"`. Tắt hook cho một phiên: `HARNESS_HOOKS=off`; tắt riêng từng hook:
+`"hooks_off": ["prompt"]` (tắt `guard` hay `stop` đều được ghi log). Các khóa khác trong `.harness/config.json`:
+`"scope_guard": "ask" | "deny" | "off"`, `"instruction_guard": "ask" | "off"` (hỏi trước khi sửa AGENTS.md,
+CLAUDE.md, `.claude/agents|skills|rules/`). `python scripts/harness.py validate` kiểm tra cấu hình;
+`trace --grep hook-` xem mọi ngữ cảnh đã tiêm (kèm session id và hash). Nên bật thêm sandbox của chính Claude Code để
 cô lập filesystem và mạng — harness không thay thế sandbox cấp hệ điều hành.
 
 ## 4. Cập nhật và gỡ cài
@@ -116,5 +120,8 @@ python ~/.harness-kit/harness.py doctor .          # kiểm tra sức khỏe cà
 | doctor báo CLAUDE.md không import AGENTS.md | thêm dòng `@AGENTS.md` lên đầu CLAUDE.md của bạn, nếu không Claude Code không thấy luật harness |
 | Claude Code báo "workspace has not been trusted" | mở dự án một lần ở chế độ tương tác và chấp nhận hộp thoại trust (permission allow mới có hiệu lực) |
 | Bị hỏi khi ghi ngoài scope | đúng thiết kế: thêm tệp vào `--scope` của feature, hoặc ghi nhận thành feature mới; hoặc `scope_guard: "off"` |
+| Stop hook nói "changes not verified" | chạy `python scripts/harness.py try <id>` sau lần sửa cuối, rồi kết thúc lượt |
+| Đã xóa một luật/hook của harness | `update` giữ nguyên việc xóa đó; muốn khôi phục: chạy lại lệnh cài với `--force` |
+| Muốn xem trước thay đổi | thêm `--diff` vào lệnh cài/cập nhật (chạy thử, in diff từng tệp) |
 | Stop hook chặn kết thúc | đọc danh sách lỗi (debug code, file rác…), sửa rồi chạy `python scripts/harness.py exit-check` |
 | Lệnh test/lint phát hiện sai | sửa `commands` trong `.harness/config.json` (nguồn sự thật duy nhất của lệnh) |

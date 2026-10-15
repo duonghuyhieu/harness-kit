@@ -761,6 +761,36 @@
       "priority": 7,
       "activated_at": "2026-10-15T21:50:40+07:00",
       "activated_commit": "d8d686d540bf647ebe09da70f0efe77d316ecf66"
+    },
+    {
+      "id": "V008",
+      "category": "feature",
+      "behavior": "2.1.0: remaining requirements R1 (path rules), R5 (visible fail-open, opt-in fail-closed guard), R9 (--diff, update keeps user removals, retires obsolete rules), R11 (Stop requires verification after the last change), R13 (hashed context log), R16 (atomic state writes), R18 (config validation, per-hook switches), R21 (Claude Code version check); instruction guard; PowerShell rule twins; review leftovers",
+      "verification": "python -m unittest tests.test_v2 -q",
+      "status": "passing",
+      "depends_on": [],
+      "evidence": {
+        "verified_at": "2026-10-15T22:20:55+07:00",
+        "commit": "5563912",
+        "command": "python -m unittest tests.test_v2 -q",
+        "exit_code": 0,
+        "duration_s": 20.4,
+        "project_check": "quick",
+        "output_tail": "----------------------------------------------------------------------\nRan 25 tests in 20.340s\n\nOK"
+      },
+      "scope": [
+        "harness_kit/*",
+        "harness_kit/templates/*",
+        "scripts/harness.py",
+        "tests/*",
+        "bin/*",
+        "package.json",
+        "*.md",
+        "docs/*"
+      ],
+      "priority": 8,
+      "activated_at": "2026-10-15T22:18:41+07:00",
+      "activated_commit": "556391251bc4546eea16623b47e2d81359112c7a"
     }
   ]
 }

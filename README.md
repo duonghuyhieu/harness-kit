@@ -43,7 +43,10 @@ In a new project the feature list starts with the harness baseline (H001…: rea
 `install` never overwrites your files: an existing `AGENTS.md`, `CLAUDE.md` or feature list is kept and the
 harness version goes to `.harness/proposals/`. An existing `.claude/settings.json` is merged entry by entry (your
 hooks, permissions and status line are kept). Options: `--level minimal|standard|full`, `--no-statusline`,
-`--python "py -3"`, `--dry-run`, `--git-init`, `--commit`, `--global` (skills and agents into `~/.claude` only).
+`--python "py -3"`, `--dry-run`, `--diff` (dry run with a diff of every existing file it would change),
+`--force` (also restore harness files and settings entries you changed or removed), `--git-init`, `--commit`,
+`--global` (skills and agents into `~/.claude` only). Updates keep what you removed on purpose (a permission rule,
+a hook, the status line) and retire rules an older version added.
 
 `harness` below means the kit CLI: `python ~/.harness-kit/harness.py` after a one-line install (PowerShell:
 `python "$HOME\.harness-kit\harness.py"`), `npx github:duonghuyhieu/harness-kit <command>`, `python harness.py` in a
@@ -75,6 +78,7 @@ scripts/harness.py      the runtime (Python stdlib only)
                         /hk-audit /hk-diagnose /hk-loop /hk-graph /hk-optimize /hk-observe /hk-clean /hk-docs
   hooks/harness_hook.py one fail-open dispatcher → scripts/harness.py hook-*
   output-styles/        hk-evidence (claims cite the command that proved them)
+  rules/                path-scoped rules (harness state files, tests), loaded only when those files are touched
   settings.json         merged: hooks, least-privilege permissions, status line
   harness-kit.json      manifest
 ```
@@ -95,15 +99,20 @@ scripts/harness.py      the runtime (Python stdlib only)
 | PreToolUse | **denies** hand edits of `status`/`evidence` in the feature list, of how a started feature is judged (`verification`, `scope`, `activated_commit`), duplicate ids and harness state files; **asks** before writing outside the active feature's scope (`scope_guard` in `.harness/config.json`) and before edits of the harness's own configuration (`.harness/config.json`, `.claude/settings.json`, the dispatcher); never answers "allow" |
 | PostToolUse | appends what the session touched to `.harness/activity.jsonl` |
 | PreCompact | writes `.harness/compact-snapshot.md` |
-| Stop | blocks finishing while debug code, junk files or a hand-edited feature list remain (never twice in a row) |
+| Stop | blocks finishing while debug code, junk files, a hand-edited feature list or changes the active feature's verification has not seen yet remain (never twice in a row) |
 | SessionEnd | records whether the session ended with a handoff |
 
-Hooks are cheap guardrails, not the gate: if Python or the runtime is missing they fail open (exit 0) with a note.
+Hooks are cheap guardrails, not the gate: if Python or the runtime is missing they fail open (exit 0) with a
+warning you see in Claude Code (`systemMessage`); set `"guard_failure": "closed"` in `.harness/config.json` to make a
+crashed guard deny instead. Edits of instruction files (`AGENTS.md`, `CLAUDE.md`, `.claude/agents|skills|rules/`)
+ask first (`"instruction_guard": "off"` to stop that); single hooks can be switched off with `"hooks_off": [...]`
+(switching off `guard` or `stop` is logged). Every injected context is logged with its session id and a content
+hash: `python scripts/harness.py trace --grep hook-`. `python scripts/harness.py validate` checks the config.
 The real gates are `verify` and `exit-check`; secrets are protected by `permissions.deny`. The permission allow
 list covers runtime commands that only read or change state by the runtime's rules (`start`, `status`, `next`, `add`,
 `handoff`, `check`, `exit-check`…); `try`, `verify`, `setup` and `loop` run a command taken from an editable file, so
-Claude Code asks before running them. Disable hooks for one
-session with `HARNESS_HOOKS=off`. For filesystem and network isolation, also turn on Claude Code's own sandboxing:
+Claude Code asks before running them. Every Bash rule has a `PowerShell(...)` twin (on Windows a Bash deny rule
+alone turns the PowerShell tool off). Disable hooks for one session with `HARNESS_HOOKS=off`. For filesystem and network isolation, also turn on Claude Code's own sandboxing:
 the harness does not replace an OS-level sandbox.
 
 ## Runtime commands (any agent)
@@ -115,7 +124,7 @@ the harness does not replace an OS-level sandbox.
 ## Development
 
 ```bash
-python -m unittest discover -s tests -t . -q     # 105 tests
+python -m unittest discover -s tests -t . -q     # 112 tests
 python scripts/harness.py check                  # this repository runs under its own harness
 ```
 

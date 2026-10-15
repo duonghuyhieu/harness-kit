@@ -52,9 +52,13 @@ docs/ …  .harness/config.json  .harness/rules.json  scripts/harness.py      (v
 ## 4. Hooks
 
 All hooks run `python "$CLAUDE_PROJECT_DIR/.claude/hooks/harness_hook.py" <event>`. The dispatcher imports the
-project's `scripts/harness.py` and calls the matching runtime command in-process. Any crash, a missing runtime or a
-missing Python ends with exit 0 (fail-open) plus a note on stderr: hooks are guardrails, the gates are elsewhere, and a
-broken hook must never brick a session. Secrets are protected by `permissions.deny`, which does not depend on hooks.
+project's `scripts/harness.py` and calls the matching runtime command in-process. Any crash or a missing runtime ends
+with exit 0 (fail-open) plus a warning the user sees (`systemMessage`): hooks are guardrails, the gates are
+elsewhere, and a broken hook must never brick a session. Opt-in exception: `"guard_failure": "closed"` makes a
+crashed or unreadable guard call a deny (the dispatcher writes the decision itself, so it works on every Claude Code
+version; hook `onFailure: "block"` needs 2.1.295+). Every injected context and every guard decision is written to
+`.harness/trace.jsonl` with the session id and a content hash (rotated); `hooks_off` switches single hooks off and
+logs it for `guard` and `stop`. State files are written atomically (temporary file + rename). Secrets are protected by `permissions.deny`, which does not depend on hooks.
 
 | Event (matcher) | Runtime command | Behaviour | Lesson |
 |---|---|---|---|
@@ -63,7 +67,7 @@ broken hook must never brick a session. Secrets are protected by `permissions.de
 | PreToolUse (`Edit\|Write\|MultiEdit\|NotebookEdit\|Bash\|PowerShell`) | `hook-guard` | deny hand edits of harness-owned state (`status`/`evidence`/`attempts` in the feature list, `.harness/` logs), of how a started feature is judged (`verification`, `verify_check`, `scope`, `cwd`, `activated_commit`) and duplicate ids; `ask` for writes outside the active feature's scope (config `scope_guard`) and for edits of the harness configuration (`.harness/config.json`, `.claude/settings*.json`, the dispatcher) | L07, L08 |
 | PostToolUse (`Edit\|Write\|MultiEdit\|NotebookEdit\|Bash\|PowerShell`) | `hook-activity` | appends `{ts, session, tool, file or command}` to `.harness/activity.jsonl` (git-ignored; append-only, rotated atomically) | L11 |
 | PreCompact | `hook-precompact` | writes `<project>/.harness/compact-snapshot.md` (status, active feature, files touched this session) | L05 |
-| Stop | `hook-stop` (v1) | blocks finishing on cheap violations (debug code, junk, hand-edited passing, WIP > 1); never twice in a row | L12 |
+| Stop | `hook-stop` (v1) | blocks finishing on cheap violations (debug code, junk, hand-edited passing, WIP > 1) and when the active feature has changes newer than its last recorded verification (`try`, `verify`, `check`); never twice in a row | L08, L12 |
 | SessionEnd | `hook-session-end` | logs the session end and whether a handoff happened | L11, L12 |
 | statusLine | `statusline` | `HK │ F012 active │ 14/19 passing · VCR 0.93 │ check PASS 12m │ ctx 42%` (+ `handoff soon` above 70 % context: the compaction snapshot is the fallback) | L05, L11 |
 

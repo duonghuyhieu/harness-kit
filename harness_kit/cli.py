@@ -13,7 +13,7 @@ KIT_ROOT = Path(__file__).resolve().parent.parent
 
 def main(argv: list[str] | None = None) -> int:
     runtime._configure_stdio()
-    p = argparse.ArgumentParser(prog="harness", description="Retrofit legacy projects with a harness-engineering structure.")
+    p = argparse.ArgumentParser(prog="harness", description="harness-kit: install a harness-engineering structure and its Claude Code layer into a project.")
     sub = p.add_subparsers(dest="cmd", required=True)
 
     s = sub.add_parser("audit", help="score the 5 subsystems, Fresh Session Test, clean state (read-only)")
@@ -39,8 +39,12 @@ def main(argv: list[str] | None = None) -> int:
                    help="install skills, agents and the output style into ~/.claude for every project (no hooks)")
     s.add_argument("--python", help="command the hooks use to start Python (default: detected, e.g. python3 / py -3)")
     s.add_argument("--no-statusline", action="store_true", help="do not install the harness status line")
-    s.add_argument("--force", action="store_true", help="replace harness files under .claude/ even if you changed them")
+    s.add_argument("--force", action="store_true",
+                   help="replace harness files under .claude/ even if you changed them, and restore harness settings "
+                        "entries you removed")
     s.add_argument("--dry-run", action="store_true", help="only print the plan")
+    s.add_argument("--diff", action="store_true", help="with the plan, show a diff of every existing file it changes "
+                                                       "(implies --dry-run)")
     s.add_argument("--git-init", action="store_true", help="run git init if the project does not use git yet")
     s.add_argument("--commit", action="store_true", help="commit a checkpoint of the newly created harness files")
 
@@ -48,8 +52,10 @@ def main(argv: list[str] | None = None) -> int:
     s.add_argument("path", nargs="?", default=".")
     s.add_argument("--python", help="change the command the hooks use to start Python")
     s.add_argument("--no-statusline", action="store_true")
-    s.add_argument("--force", action="store_true", help="also replace harness files you changed")
+    s.add_argument("--force", action="store_true", help="also replace harness files you changed and restore removed "
+                                                        "harness settings entries")
     s.add_argument("--dry-run", action="store_true")
+    s.add_argument("--diff", action="store_true", help="show a diff of every existing file it changes (implies --dry-run)")
 
     s = sub.add_parser("uninstall", help="remove the unchanged .claude/ harness files and the harness settings entries")
     s.add_argument("path", nargs="?", default=".")
@@ -96,13 +102,14 @@ def main(argv: list[str] | None = None) -> int:
             print(installer.install_global(dry_run=args.dry_run))
             return 0
         print(installer.install(Path(args.path), level=args.level, python=args.python,
-                                statusline=not args.no_statusline, force=args.force, dry_run=args.dry_run,
-                                git_init=args.git_init, commit=args.commit))
+                                statusline=not args.no_statusline, force=args.force,
+                                dry_run=args.dry_run or args.diff, git_init=args.git_init, commit=args.commit,
+                                diff=args.diff))
         return 0
 
     if args.cmd == "update":
         print(installer.update(Path(args.path), python=args.python, statusline=not args.no_statusline,
-                               force=args.force, dry_run=args.dry_run))
+                               force=args.force, dry_run=args.dry_run or args.diff, diff=args.diff))
         return 0
 
     if args.cmd == "uninstall":

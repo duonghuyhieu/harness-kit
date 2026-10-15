@@ -527,6 +527,7 @@
       "WARNING: no .harness/session.json — next time, start the session with `start`.",
       "WARNING: app/n.py: # TODO x",
       "WARNING: 2 uncommitted file(s) — commit the verified work, or record the WIP in PROGRESS.md.",
+      "WARNING: PROGRESS.md still has HARNESS:FILL placeholders: write Done / In Progress / Known Issues / Next Steps by hand — the next session starts from them",
       "ERROR: leftover debug code: app/n.py: breakpoint()",
       "ERROR: temporary/junk file: junk.tmp",
       "== NOT CLEAN: 2 problem(s) =="
@@ -583,6 +584,7 @@
       "[PASS] test (<T>s)",
       "== RESULT: PASS ==",
       "WARNING: 1 uncommitted file(s) — commit the verified work, or record the WIP in PROGRESS.md.",
+      "WARNING: PROGRESS.md still has HARNESS:FILL placeholders: write Done / In Progress / Known Issues / Next Steps by hand — the next session starts from them",
       "ERROR: standard startup path is broken: `\"<PY>\" -c \"raise SystemExit(3)\"`",
       "",
       "ERROR: PROGRESS.md was not updated this session (run `handoff`, then write Done / In Progress / Known Issues / Next Steps).",
@@ -641,6 +643,7 @@
       "== RESULT: PASS ==",
       "WARNING: 1 changed file(s) outside X's scope: app/other.py",
       "WARNING: 4 uncommitted file(s) — commit the verified work, or record the WIP in PROGRESS.md.",
+      "WARNING: PROGRESS.md still has HARNESS:FILL placeholders: write Done / In Progress / Known Issues / Next Steps by hand — the next session starts from them",
       "== CLEAN STATE =="
     ],
     "features": {

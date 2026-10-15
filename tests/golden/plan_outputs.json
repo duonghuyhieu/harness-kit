@@ -11,7 +11,7 @@
       ],
       [
         "init.sh",
-        "2c21cc8227c9f72a"
+        "c79908a694eaf3c9"
       ],
       [
         "init.ps1",
@@ -23,7 +23,7 @@
       ],
       [
         ".harness/config.json",
-        "e459021934d3b116"
+        "45a60627443a6229"
       ],
       [
         "feature_list.json",
@@ -35,7 +35,7 @@
       ],
       [
         ".harness/.gitignore",
-        "bb315470634a08f8"
+        "278c151fc8ab3dc3"
       ],
       [
         "scripts/harness.py",
@@ -55,6 +55,7 @@
     "skipped": [],
     "notes": [
       "Legacy instructions found: CLAUDE.md → feature H005 requires merging them into AGENTS.md + docs/.",
+      "Python project without a virtualenv: `setup` installs into whichever Python is active — create and activate one first (python -m venv .venv).",
       "Missing .gitignore in the project root."
     ]
   },
@@ -70,7 +71,7 @@
       ],
       [
         "init.sh",
-        "2c21cc8227c9f72a"
+        "c79908a694eaf3c9"
       ],
       [
         "init.ps1",
@@ -118,7 +119,7 @@
       ],
       [
         ".harness/config.json",
-        "e459021934d3b116"
+        "45a60627443a6229"
       ],
       [
         "feature_list.json",
@@ -130,7 +131,7 @@
       ],
       [
         ".harness/.gitignore",
-        "bb315470634a08f8"
+        "278c151fc8ab3dc3"
       ],
       [
         "scripts/harness.py",
@@ -150,6 +151,7 @@
     "skipped": [],
     "notes": [
       "Legacy instructions found: CLAUDE.md → feature H005 requires merging them into AGENTS.md + docs/.",
+      "Python project without a virtualenv: `setup` installs into whichever Python is active — create and activate one first (python -m venv .venv).",
       "Missing .gitignore in the project root."
     ]
   },
@@ -165,7 +167,7 @@
       ],
       [
         "init.sh",
-        "2c21cc8227c9f72a"
+        "c79908a694eaf3c9"
       ],
       [
         "init.ps1",
@@ -237,7 +239,7 @@
       ],
       [
         ".harness/config.json",
-        "e459021934d3b116"
+        "45a60627443a6229"
       ],
       [
         "feature_list.json",
@@ -249,7 +251,7 @@
       ],
       [
         ".harness/.gitignore",
-        "bb315470634a08f8"
+        "278c151fc8ab3dc3"
       ],
       [
         "scripts/harness.py",
@@ -269,6 +271,7 @@
     "skipped": [],
     "notes": [
       "Legacy instructions found: CLAUDE.md → feature H005 requires merging them into AGENTS.md + docs/.",
+      "Python project without a virtualenv: `setup` installs into whichever Python is active — create and activate one first (python -m venv .venv).",
       "Missing .gitignore in the project root."
     ]
   },
@@ -288,7 +291,7 @@
       ],
       [
         "init.sh",
-        "2c21cc8227c9f72a"
+        "c79908a694eaf3c9"
       ],
       [
         "init.ps1",
@@ -336,11 +339,11 @@
       ],
       [
         ".harness/config.json",
-        "b7f023c40ae84934"
+        "f3c5a43a4227610b"
       ],
       [
         "feature_list.json",
-        "38f557ee35d17419"
+        "2ed3168d84f96adf"
       ],
       [
         ".harness/rules.json",
@@ -348,7 +351,7 @@
       ],
       [
         ".harness/.gitignore",
-        "bb315470634a08f8"
+        "278c151fc8ab3dc3"
       ],
       [
         "scripts/harness.py",
@@ -362,7 +365,7 @@
     "proposals": [],
     "skipped": [],
     "notes": [
-      "Project does not use git: the harness needs git for checkpoints/evidence. Use --git-init.",
+      "Project does not use git: the harness needs git for checkpoints/evidence. Run `git init` (or install with --git-init).",
       "No test command found: feedback is the weakest link — feature H002 must add one.",
       "Missing .gitignore in the project root."
     ]
@@ -383,7 +386,7 @@
       ],
       [
         "init.sh",
-        "2c21cc8227c9f72a"
+        "c79908a694eaf3c9"
       ],
       [
         "init.ps1",
@@ -431,11 +434,11 @@
       ],
       [
         ".harness/config.json",
-        "0a31e97323be7ae2"
+        "4b66e3fe810e444b"
       ],
       [
         "feature_list.json",
-        "38f557ee35d17419"
+        "2ed3168d84f96adf"
       ],
       [
         ".harness/rules.json",
@@ -443,7 +446,7 @@
       ],
       [
         ".harness/.gitignore",
-        "bb315470634a08f8"
+        "278c151fc8ab3dc3"
       ],
       [
         "scripts/harness.py",
@@ -457,7 +460,7 @@
     "proposals": [],
     "skipped": [],
     "notes": [
-      "Project does not use git: the harness needs git for checkpoints/evidence. Use --git-init.",
+      "Project does not use git: the harness needs git for checkpoints/evidence. Run `git init` (or install with --git-init).",
       "No stack detected: fill in commands in .harness/config.json by hand.",
       "No test command found: feedback is the weakest link — feature H002 must add one.",
       "Missing .gitignore in the project root."
@@ -467,7 +470,7 @@
     "create": [
       [
         "init.sh",
-        "2c21cc8227c9f72a"
+        "c79908a694eaf3c9"
       ],
       [
         "init.ps1",
@@ -515,7 +518,7 @@
       ],
       [
         ".harness/config.json",
-        "68fe9c668dc51441"
+        "d03c25168f78f1d0"
       ],
       [
         ".harness/rules.json",
@@ -523,7 +526,7 @@
       ],
       [
         ".harness/.gitignore",
-        "bb315470634a08f8"
+        "278c151fc8ab3dc3"
       ],
       [
         "scripts/harness.py",
@@ -554,7 +557,8 @@
     "notes": [
       "feature_list.json already exists: kept as is; the proposed harness features are in .harness/proposals/feature_list.json — merge by hand (the runtime also accepts the legacy schema).",
       ".gitattributes does not pin the harness scripts' line endings: under core.autocrlf, init.sh and scripts/harness.py may be checked out with CRLF and fail in bash. Merge .harness/proposals/gitattributes.proposed into .gitattributes, then run `git add --renormalize .`.",
-      "Legacy instructions found: CLAUDE.md → feature H005 requires merging them into AGENTS.md + docs/."
+      "Legacy instructions found: CLAUDE.md → feature H005 requires merging them into AGENTS.md + docs/.",
+      "Python project without a virtualenv: `setup` installs into whichever Python is active — create and activate one first (python -m venv .venv)."
     ]
   }
 }

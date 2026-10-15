@@ -41,7 +41,7 @@ import sys
 import time
 from pathlib import Path
 
-VERSION = "2.0.1"
+VERSION = "2.1.0"
 STATES = ("not_started", "active", "blocked", "passing")
 STATUS_ALIASES = {"not_started": "not_started", "todo": "not_started", "planned": "not_started", "fail": "not_started",
                   "active": "active", "in_progress": "active", "blocked": "blocked",
@@ -82,10 +82,48 @@ DEFAULT_CONFIG = {
     "debug_exempt": [],
     # interactive Claude Code hooks (v2): writes outside the active feature's scope -> "ask" | "deny" | "off"
     "scope_guard": "ask",
+    # edits of instruction files (AGENTS.md, CLAUDE.md, .claude/agents|skills|rules) -> "ask" | "off"
+    "instruction_guard": "ask",
+    # a crash of the guard hook: "open" (allow, with a visible warning) or "closed" (deny the tool call)
+    "guard_failure": "open",
+    # dispatcher events switched off for this project, e.g. ["prompt"]; switching off "guard" or "stop" is logged
+    "hooks_off": [],
     "activity_max_lines": 2000,
+    "trace_max_lines": 5000,
+    "loop_timeout_sec": 3600,
+    "loop_keep_runs": 30,
+    "harness_version": "",
 }
+# keys a project config may hold although no default exists for them
+CONFIG_EXTRA_KEYS = {"regression"}
 
 LAYERS = ("instructions", "tools", "environment", "state", "feedback")
+
+
+def atomic_write(p: Path, text: str) -> None:
+    """Write through a temporary file and a rename (R16): a crash or a parallel hook never sees half a file."""
+    p.parent.mkdir(parents=True, exist_ok=True)
+    tmp = p.with_name(f".{p.name}.{os.getpid()}.tmp")
+    tmp.write_text(text, encoding="utf-8")
+    for attempt in range(6):
+        try:
+            os.replace(tmp, p)
+            return
+        except PermissionError:  # Windows: another process holds the file open for a moment
+            time.sleep(0.05 * (attempt + 1))
+    os.replace(tmp, p)
+
+
+def rotate_jsonl(p: Path, keep: int) -> None:
+    """Keep an append-only log bounded: past `keep` lines, keep the newest half (atomic rename)."""
+    try:
+        if p.stat().st_size <= keep * 160:  # cheap size test first
+            return
+        lines = p.read_text(encoding="utf-8", errors="replace").splitlines()
+        if len(lines) > keep:
+            atomic_write(p, "\n".join(lines[-keep // 2:]) + "\n")
+    except OSError:
+        pass  # another process is rotating it: try again next time
 
 CODE_SUFFIXES = {".py", ".js", ".jsx", ".ts", ".tsx", ".mjs", ".cjs", ".vue", ".svelte", ".java", ".kt", ".go",
                  ".rs", ".cs", ".php", ".rb", ".swift", ".scala"}
@@ -149,8 +187,11 @@ class Harness:
             return
         self.hdir.mkdir(exist_ok=True)
         entry = {"ts": now_iso(), "cmd": cmd, "result": result, **extra}
-        with (self.hdir / "trace.jsonl").open("a", encoding="utf-8") as fh:
+        p = self.hdir / "trace.jsonl"
+        with p.open("a", encoding="utf-8") as fh:
             fh.write(json.dumps(entry, ensure_ascii=False) + "\n")
+        rotate_jsonl(p, int(self.cfg.get("trace_max_lines", 5000)) if isinstance(getattr(self, "cfg", None), dict)
+                     else 5000)
 
     # ------------------------------------------------------------ git ---
     def git(self, *args: str) -> str:
@@ -163,6 +204,9 @@ class Harness:
 
     def head(self) -> str:
         return self.git("rev-parse", "--short", "HEAD")
+
+    def no_commit_label(self) -> str:
+        return "no commits yet" if self.git("rev-parse", "--is-inside-work-tree") == "true" else "no git"
 
     # ------------------------------------------------------- features ---
     def load_features(self) -> list[dict]:
@@ -194,7 +238,7 @@ class Harness:
             payload = self._container
         else:
             payload = features
-        p.write_text(json.dumps(payload, ensure_ascii=False, indent=2) + "\n", encoding="utf-8")
+        atomic_write(p, json.dumps(payload, ensure_ascii=False, indent=2) + "\n")
 
     @staticmethod
     def find_feature(features: list[dict], fid: str) -> dict:
@@ -375,7 +419,7 @@ def cmd_check(h: Harness, args) -> int:
     steps = args.only or (h.cfg["full_check"] if args.full else h.cfg["check"])
     results = []
     overall = True
-    print(f"== harness check ({'full' if args.full else 'quick'}) @ {h.head() or 'no-git'} ==")
+    print(f"== harness check ({'full' if args.full else 'quick'}) @ {h.head() or h.no_commit_label()} ==")
     for step in steps:
         t0 = time.time()
         if step == "rules":
@@ -420,7 +464,7 @@ def cmd_check(h: Harness, args) -> int:
     record = {"ts": now_iso(), "commit": h.head(), "mode": "full" if args.full else "quick",
               "ok": overall, "steps": results}
     h.hdir.mkdir(exist_ok=True)
-    (h.hdir / "last-check.json").write_text(json.dumps(record, ensure_ascii=False, indent=2), encoding="utf-8")
+    atomic_write(h.hdir / "last-check.json", json.dumps(record, ensure_ascii=False, indent=2))
     h.trace("check", "pass" if overall else "fail", mode=record["mode"],
             steps={r["step"]: r["status"] for r in results})
     print("== RESULT:", "PASS" if overall else "FAIL", "==")
@@ -470,6 +514,11 @@ def stats(feats: list[dict]) -> dict:
 
 def cmd_validate(h: Harness, args) -> int:
     errs = validate_features(h)
+    try:
+        raw_cfg = json.loads((h.hdir / "config.json").read_text(encoding="utf-8"))
+    except (OSError, ValueError):
+        raw_cfg = {}
+    errs += [f"config: {e}" for e in config_problems(raw_cfg if isinstance(raw_cfg, dict) else {})]
     for req in args.require or []:
         cat, _, n = req.partition(":")
         have = sum(1 for f in h.load_features() if f.get("category") == cat)
@@ -497,7 +546,8 @@ def cmd_status(h: Harness, args) -> int:
     lc = h.hdir / "last-check.json"
     if lc.exists():
         rec = json.loads(lc.read_text(encoding="utf-8"))
-        print(f"Last check: {'PASS' if rec['ok'] else 'FAIL'} ({rec['mode']}) at {rec['ts']} @ {rec.get('commit')}")
+        print(f"Last check: {'PASS' if rec['ok'] else 'FAIL'} ({rec['mode']}) at {rec['ts']}"
+              + (f" @ {rec['commit']}" if rec.get("commit") else ""))
     else:
         print("Last check: never run — run `python scripts/harness.py check`.")
     errs = validate_features(h)
@@ -718,7 +768,7 @@ def cmd_start(h: Harness, args) -> int:
     """Clock in: re-establish context within a few minutes."""
     session = {"started_at": now_iso(), "head": h.git("rev-parse", "HEAD"), "ts": time.time()}
     h.hdir.mkdir(exist_ok=True)
-    (h.hdir / "session.json").write_text(json.dumps(session, indent=2), encoding="utf-8")
+    atomic_write(h.hdir / "session.json", json.dumps(session, indent=2))
     h.trace("start", "ok")
     print("== SESSION START ==")
     print(f"Read in order: {h.cfg['entry_file']} → {h.cfg['progress_file']} → docs/DECISIONS.md")
@@ -729,10 +779,11 @@ def cmd_start(h: Harness, args) -> int:
         m = re.search(r"^## (Next Steps|Bước tiếp theo).*?(?=^## |\Z)", text, re.M | re.S)
         if m:
             print("\n" + m.group(0).strip())
-    print("\nRecent commits:\n" + (h.git("log", "--oneline", "-5") or "(no git)"))
+    print("\nRecent commits:\n" + (h.git("log", "--oneline", "-5") or f"({h.no_commit_label()})"))
     dirty = h.git("status", "--porcelain")
     if dirty:
-        print(f"\nWARNING: the working tree has uncommitted changes from the previous session:\n{dirty[:800]}")
+        print(f"\nWARNING: the working tree has uncommitted changes (commit or record them before new work):\n"
+              f"{dirty[:800]}")
     print()
     cmd_status(h, args)
     if not args.no_check:
@@ -840,6 +891,10 @@ def cmd_exit_check(h: Harness, args) -> int:
     _exit_check_verification(h, args, problems, warnings)
     session = _exit_check_state(h, problems, warnings)
     _exit_check_hygiene(h, session, problems, warnings)
+    prog = h.path("progress_file")
+    if prog.exists() and FILL_MARKER in prog.read_text(encoding="utf-8", errors="replace"):
+        warnings.append(f"{h.cfg['progress_file']} still has {FILL_MARKER} placeholders: write Done / In Progress / "
+                        f"Known Issues / Next Steps by hand — the next session starts from them")
     for w in warnings:
         print("WARNING:", w)
     for p in problems:
@@ -859,7 +914,8 @@ def cmd_handoff(h: Harness, args) -> int:
     if lc.exists():
         rec = json.loads(lc.read_text(encoding="utf-8"))
         failed = [r["step"] for r in rec["steps"] if r["status"] == "fail"]
-        check_line = f"{'PASS' if rec['ok'] else 'FAIL ' + ', '.join(failed)} ({rec['mode']}, {rec['ts']}, @{rec.get('commit')})"
+        check_line = (f"{'PASS' if rec['ok'] else 'FAIL ' + ', '.join(failed)} ({rec['mode']}, {rec['ts']}"
+                      + (f", @{rec['commit']})" if rec.get("commit") else ")"))
     active = [f"{f['id']} — {f.get('behavior')}" for f in feats if f.get("status") == "active"]
     blocked = [f"{f['id']} — {f.get('blocked_reason', '')}" for f in feats if f.get("status") == "blocked"]
     block = "\n".join([
@@ -881,7 +937,7 @@ def cmd_handoff(h: Harness, args) -> int:
             text = text.rstrip() + "\n\n## Current State\n" + block + "\n"
     else:
         text = f"# Progress\n\n## Current State\n{block}\n"
-    prog.write_text(text, encoding="utf-8")
+    atomic_write(prog, text)
     h.trace("handoff", "ok")
     print(block)
     print(f"\nUpdated {h.cfg['progress_file']}. Now write the Done / In Progress / Known Issues / "
@@ -1021,7 +1077,8 @@ def cmd_hook_stop(h: Harness, args) -> int:
         for f in h.load_features():
             if f.get("status") == "active" and scope_drift(h, f):
                 problems.append(f"changes outside {f['id']}'s scope: {', '.join(scope_drift(h, f)[:5])}")
-    h.trace("hook-stop", "block" if problems else "allow", problems=len(problems))
+    problems += unverified_changes(h)
+    h.trace("hook-stop", "block" if problems else "allow", problems=len(problems), session=payload.get("session_id"))
     if not problems:
         return 0
     sys.stderr.write("Harness Stop hook: the repo is not in a clean state.\n")
@@ -1030,6 +1087,62 @@ def cmd_hook_stop(h: Harness, args) -> int:
     sys.stderr.write("FIX: resolve these (remove debug code/junk, fix the feature list via scripts/harness.py), "
                      "then run `python scripts/harness.py exit-check` before finishing.\n")
     return 2
+
+
+def _last_verification_epoch(h: Harness, fid: str) -> float:
+    """When the active feature's verification last ran with a recorded result: `try`/`verify` in the trace, or a
+    project check. Machine-readable evidence for the Stop gate (R11)."""
+    best = 0.0
+    rec = _read_json(h.hdir / "last-check.json", None)
+    if isinstance(rec, dict):
+        try:
+            best = _dt.datetime.fromisoformat(rec.get("ts", "")).timestamp()
+        except (TypeError, ValueError):
+            pass
+    p = h.hdir / "trace.jsonl"
+    if p.exists():
+        for line in p.read_text(encoding="utf-8", errors="replace").splitlines()[-2000:]:
+            try:
+                e = json.loads(line)
+            except ValueError:
+                continue
+            if e.get("feature") == fid and e.get("cmd") in ("try", "verify"):
+                if isinstance(e.get("epoch"), (int, float)):
+                    best = max(best, float(e["epoch"]))
+                else:
+                    try:
+                        best = max(best, _dt.datetime.fromisoformat(e.get("ts", "")).timestamp())
+                    except (TypeError, ValueError):
+                        pass
+    return best
+
+
+def unverified_changes(h: Harness) -> list[str]:
+    """Stop gate (R11): the active feature has files changed after its verification last ran. Cheap: git status and
+    file times only, no test run; the Stop hook blocks once, then `stop_hook_active` lets the turn end."""
+    active = [f for f in h.load_features() if f.get("status") == "active"]
+    if not active:
+        return []
+    f = active[0]
+    scope = _scope_globs(f)
+    changed = []
+    for line in h.git("status", "--porcelain").splitlines():
+        rel = line[3:].strip().strip('"').split(" -> ")[-1]
+        if not rel or rel.startswith((".harness/", ".claude/")) or rel in (h.cfg["feature_list"], h.cfg["progress_file"]):
+            continue
+        if scope and not any(fnmatch.fnmatch(rel, g) for g in scope):
+            continue
+        p = h.root / rel
+        if p.is_file():
+            changed.append((rel, p.stat().st_mtime))
+    if not changed:
+        return []
+    since = _last_verification_epoch(h, f["id"])
+    newer = [rel for rel, mtime in changed if mtime > since + 1]
+    if not newer:
+        return []
+    return [f"{f['id']} has changes not verified since they were made ({', '.join(newer[:5])}): run "
+            f"`python scripts/harness.py try {f['id']}` and report the result before finishing"]
 
 
 # ------------------------------------------------------------------- loop ---
@@ -1093,7 +1206,8 @@ Out of scope: {out_of_scope}
 Rules:
 - First read AGENTS.md (and PROGRESS.md, docs/DECISIONS.md if present) and follow its hard constraints.
 - Change only what this feature needs, with the Write/Edit tools. Never edit feature_list.json, .harness/,
-  scripts/harness.py, .claude/ or the rubric: the harness restores them and rejects the attempt.
+  scripts/harness.py, .claude/ or the rubric (unless your scope above names the file): the harness restores them
+  and rejects the attempt.
 - Never delete, skip or loosen tests. Do not commit, push, or run `harness.py verify/next/block/add`:
   the harness verifies, and a human approves and commits.
 - New tests must be written in the style the project's own test command collects and runs:
@@ -1275,7 +1389,8 @@ def _pick_loop_feature(h: Harness, wanted: str | None) -> dict | None:
     if active:
         return active[0]
     for f in sorted(feats, key=lambda x: (x.get("priority", 100), feats.index(x))):
-        if f.get("status") == "not_started" and _deps_ok(f, feats):
+        # H00x edit .harness/config.json and the docs, which the loop protects: they belong to /hk-init
+        if f.get("status") == "not_started" and _deps_ok(f, feats) and f.get("category") != "harness":
             return f
     return None
 
@@ -2135,6 +2250,7 @@ def cmd_try(h: Harness, args) -> int:
     code, out, dur = h.run_shell(ver, f.get("cwd", "."))
     print(tail(out, 40))
     print(f"[{'PASS' if code == 0 else 'FAIL'}] {f['id']} verification exited {code} after {dur:.1f}s (no state changed).")
+    h.trace("try", "pass" if code == 0 else "fail", feature=f["id"], exit_code=code, epoch=time.time())
     return 0 if code == 0 else 1
 
 
@@ -2229,6 +2345,27 @@ SHELL_WRITE_RE = (r"(>>?|\btee\b|\bsed\s+(-[a-zA-Z]*i|--in-place)|Set-Content|Ad
 SHELL_COPY_RE = r"\b(cp|mv|Copy-Item|Move-Item)\b[^|;&\n]*[\s/]"  # the target is the destination: the last argument
 
 
+INSTRUCTION_FILES = ("AGENTS.md", "CLAUDE.md", "CLAUDE.local.md")
+INSTRUCTION_DIRS = (".claude/agents/", ".claude/skills/", ".claude/rules/", ".claude/output-styles/")
+
+
+def _is_instruction_file(key: str) -> bool:
+    return key in {_path_key(p) for p in INSTRUCTION_FILES} or key.startswith(tuple(_path_key(d) for d in INSTRUCTION_DIRS))
+
+
+def _inline_script_writes(command: str, h: Harness) -> bool:
+    """`python -c` / `node -e` one-liners that open a harness state file for writing (a heuristic: a guardrail, the
+    gates stay `verify` and the loop's integrity check)."""
+    if not re.search(r"\b(python3?|py|node)\b[^|;&\n]*\s-[ce]\b", command):
+        return False
+    names = [h.cfg["feature_list"]] + sorted(HOOK_STATE_FILES)
+    text = command.replace("\\", "/")
+    if not any(re.search(re.escape(n), text, re.I if os.name == "nt" else 0) for n in names):
+        return False
+    return bool(re.search(r"""open\([^)]*,\s*['"][wa]|write_text|write_bytes|writeFileSync|appendFile|\.write\(|"""
+                          r"""json\.dump\(|os\.replace|os\.rename|shutil\.(copy|move)|unlink\(|rmSync|renameSync""", text))
+
+
 def _shell_writes(command: str, target_re: str) -> bool:
     flags = re.I if os.name == "nt" else 0
     return bool(re.search(SHELL_WRITE_RE + target_re, command, flags) or
@@ -2243,13 +2380,20 @@ def _stdin_text() -> str:
     return buf.read().decode("utf-8-sig", "replace") if buf is not None else sys.stdin.read()
 
 
+_LAST_PAYLOAD: dict = {}
+_PAYLOAD_BROKEN = False  # stdin had content that was not a JSON object (the guard may fail closed on it)
+
+
 def _hook_payload() -> dict:
+    global _LAST_PAYLOAD, _PAYLOAD_BROKEN
     try:
         raw = _stdin_text()
         data = json.loads(raw) if raw.strip() else {}
     except (ValueError, OSError):
-        return {}
-    return data if isinstance(data, dict) else {}
+        data = None
+    _PAYLOAD_BROKEN = not isinstance(data, dict)
+    _LAST_PAYLOAD = data if isinstance(data, dict) else {}
+    return _LAST_PAYLOAD
 
 
 def _path_key(rel: str) -> str:
@@ -2326,7 +2470,7 @@ def state_summary(h: Harness) -> list[str]:
     if rec:
         failed = [r["step"] for r in rec.get("steps", []) if r.get("status") == "fail"]
         lines.append(f"Last check: {'PASS' if rec.get('ok') else 'FAIL ' + ', '.join(failed)} ({rec.get('mode')}, "
-                     f"{_age(rec.get('ts', ''))} ago, @{rec.get('commit')})")
+                     f"{_age(rec.get('ts', ''))} ago" + (f", @{rec['commit']})" if rec.get("commit") else ")"))
     else:
         lines.append("Last check: never run")
     dirty = h.git("status", "--porcelain").splitlines()
@@ -2344,9 +2488,8 @@ def cmd_hook_session_start(h: Harness, args) -> int:
     if source == "startup":  # an automatic clock-in record, so exit-check can tell whether PROGRESS.md was updated
         sess_p = h.hdir / "session.json"
         h.hdir.mkdir(exist_ok=True)
-        sess_p.write_text(json.dumps({"started_at": now_iso(), "head": h.git("rev-parse", "HEAD"), "ts": time.time(),
-                                      "session_id": payload.get("session_id"), "via": "hook"}, indent=2),
-                          encoding="utf-8")
+        atomic_write(sess_p, json.dumps({"started_at": now_iso(), "head": h.git("rev-parse", "HEAD"), "ts": time.time(),
+                                         "session_id": payload.get("session_id"), "via": "hook"}, indent=2))
     lines = ["## Harness state (injected by harness-kit; rules are in AGENTS.md)"] + state_summary(h)
     lines.append("Protocol: clock in with `python scripts/harness.py start` (or /hk-start) · one feature at a time "
                  "(WIP=1) · feature status changes only via `verify` · finish with `handoff` + `exit-check` "
@@ -2357,8 +2500,10 @@ def cmd_hook_session_start(h: Harness, args) -> int:
         lines += ["", "## Snapshot written before the context was compacted"] + body
         lines.append("The context was compacted: re-read the active feature, re-run `python scripts/harness.py try "
                      "<id>` before claiming progress, and re-confirm any approval the user gave earlier.")
-    h.trace("hook-session-start", "ok", source=source)
-    _emit("SessionStart", additionalContext="\n".join(lines))
+    ctx = "\n".join(lines)
+    h.trace("hook-session-start", "ok", source=source, session=payload.get("session_id"),
+            context_sha256=hashlib.sha256(ctx.encode("utf-8")).hexdigest()[:16], context_chars=len(ctx))
+    _emit("SessionStart", additionalContext=ctx)
     return 0
 
 
@@ -2377,12 +2522,15 @@ def cmd_hook_prompt(h: Harness, args) -> int:
     if state.get("prompt_key") == key and time.time() - state.get("prompt_ts", 0) < 600:
         return 0
     state.update(prompt_key=key, prompt_ts=time.time())
-    state_p.write_text(json.dumps(state), encoding="utf-8")
+    atomic_write(state_p, json.dumps(state))
     scope = f" Scope: {' '.join(_scope_globs(f))}." if _scope_globs(f) else ""
-    _emit("UserPromptSubmit", additionalContext=(
-        f"Harness: {f['id']} is the active feature (WIP=1) — {f.get('behavior')}.{scope} Done means "
-        f"`python scripts/harness.py verify {f['id']}` passes after an independent review; new work becomes a new "
-        f"feature (`add`), not part of this one."))
+    ctx = (f"Harness: {f['id']} is the active feature (WIP=1) — {f.get('behavior')}.{scope} Done means "
+           f"`python scripts/harness.py verify {f['id']}` passes after an independent review; new work becomes a new "
+           f"feature (`add`), not part of this one.")
+    payload = _LAST_PAYLOAD
+    h.trace("hook-prompt", "ok", session=payload.get("session_id"), feature=f["id"],
+            context_sha256=hashlib.sha256(ctx.encode("utf-8")).hexdigest()[:16], context_chars=len(ctx))
+    _emit("UserPromptSubmit", additionalContext=ctx)
     return 0
 
 
@@ -2467,8 +2615,15 @@ def cmd_hook_guard(h: Harness, args) -> int:
     """PreToolUse for interactive sessions: deny hand edits of harness state; ask before writing outside the active
     feature's scope (config `scope_guard`: ask | deny | off). Never answers "allow": the user's permissions decide."""
     payload = _hook_payload()
+    if not (h.hdir / "config.json").exists():
+        return 0
+    if _PAYLOAD_BROKEN and h.cfg.get("guard_failure") == "closed":
+        h.trace("hook-guard", "deny", reason="unreadable tool call (guard_failure: closed)")
+        _emit("PreToolUse", permissionDecision="deny",
+              permissionDecisionReason="harness-kit: the tool call could not be read and guard_failure is \"closed\".")
+        return 0
     tool, tin = payload.get("tool_name", ""), payload.get("tool_input") or {}
-    if not isinstance(tin, dict) or not (h.hdir / "config.json").exists():
+    if not isinstance(tin, dict):
         return 0
     decision, reason = None, None
     if tool in ("Write", "Edit", "MultiEdit", "NotebookEdit"):
@@ -2486,9 +2641,16 @@ def cmd_hook_guard(h: Harness, args) -> int:
         if not decision and key in {_path_key(p) for p in GUARD_CONFIG_FILES}:
             decision, reason = "ask", (f"{rel} configures the harness itself (commands, hooks, guards): approve only "
                                        f"if you asked for this change")
+        if not decision and h.cfg.get("instruction_guard", "ask") == "ask" and _is_instruction_file(key):
+            decision, reason = "ask", (f"{rel} is an instruction file every later session trusts: approve only if this "
+                                       f"change was asked for (instructions written by an agent are input to review)")
         mode = h.cfg.get("scope_guard", "ask")
         if not decision and mode in ("ask", "deny"):
-            for f in h.load_features():
+            try:
+                feats = h.load_features()
+            except (ValueError, OSError, SystemExit):  # a broken feature list is being repaired: no scope to check
+                feats = []
+            for f in feats:
                 scope = _scope_globs(f)
                 if f.get("status") == "active" and scope and not any(
                         fnmatch.fnmatch(rel, g) for g in scope + list(h.cfg.get("scope_exempt", []))):
@@ -2497,15 +2659,16 @@ def cmd_hook_guard(h: Harness, args) -> int:
                               f"if it belongs to {f['id']}; otherwise record it as a new feature")
                     break
     elif tool in ("Bash", "PowerShell"):
-        command = _shell_scan_text(str(tin.get("command", "")))
+        raw_command = str(tin.get("command", ""))
+        command = _shell_scan_text(raw_command)
         targets = [re.escape(h.cfg["feature_list"])] + [re.escape(p) for p in HOOK_STATE_FILES]
-        if any(_shell_writes(command, t) for t in targets):
+        if any(_shell_writes(command, t) for t in targets) or _inline_script_writes(raw_command, h):
             decision, reason = "deny", "harness state files are changed only through scripts/harness.py"
         elif any(_shell_writes(command, re.escape(p)) for p in GUARD_CONFIG_FILES):
             decision, reason = "ask", "the command writes a file that configures the harness itself"
     if not decision:
         return 0
-    h.trace("hook-guard", decision, tool=tool, reason=reason)
+    h.trace("hook-guard", decision, tool=tool, reason=reason, session=payload.get("session_id"))
     _emit("PreToolUse", permissionDecision=decision, permissionDecisionReason=f"harness-kit: {reason}.")
     return 0
 
@@ -2527,16 +2690,7 @@ def cmd_hook_activity(h: Harness, args) -> int:
     p = h.hdir / "activity.jsonl"
     with p.open("a", encoding="utf-8") as fh:  # append: parallel tool calls never lose a record
         fh.write(json.dumps(rec, ensure_ascii=False) + "\n")
-    keep = int(h.cfg.get("activity_max_lines", 2000))
-    try:
-        if p.stat().st_size > keep * 160:  # cheap size test first; rotate rarely, atomically
-            lines = p.read_text(encoding="utf-8", errors="replace").splitlines()
-            if len(lines) > keep:
-                tmp = h.hdir / "activity.jsonl.tmp"
-                tmp.write_text("\n".join(lines[-keep // 2:]) + "\n", encoding="utf-8")
-                os.replace(tmp, p)
-    except OSError:
-        pass  # another hook is rotating it: try again next time
+    rotate_jsonl(p, int(h.cfg.get("activity_max_lines", 2000)))
     return 0
 
 
@@ -2566,7 +2720,7 @@ def cmd_hook_precompact(h: Harness, args) -> int:
         lines += ["", f"Files changed in this session ({len(files)}): " + ", ".join(files[:30])]
     if payload.get("custom_instructions"):
         lines += ["", f"User's compaction instructions: {payload['custom_instructions']}"]
-    (h.hdir / "compact-snapshot.md").write_text("\n".join(lines) + "\n", encoding="utf-8")
+    atomic_write(h.hdir / "compact-snapshot.md", "\n".join(lines) + "\n")
     h.trace("hook-precompact", "ok", files=len(files))
     return 0
 
@@ -2609,7 +2763,10 @@ def cmd_trace(h: Harness, args) -> int:
     if not p.exists():
         print("No trace yet.")
         return 0
-    for line in p.read_text(encoding="utf-8").splitlines()[-args.n:]:
+    lines = p.read_text(encoding="utf-8", errors="replace").splitlines()
+    if getattr(args, "grep", None):
+        lines = [line for line in lines if args.grep in line]
+    for line in lines[-args.n:]:
         print(line)
     return 0
 
@@ -2638,19 +2795,19 @@ def build_parser() -> argparse.ArgumentParser:
     s = sub.add_parser("check", help="run verification")
     s.add_argument("--full", action="store_true", help="also run build, e2e, feature regression")
     s.add_argument("--only", nargs="+", help="run only these steps")
-    sub.add_parser("status")
-    s = sub.add_parser("next")
+    sub.add_parser("status", help="features, VCR and the last check")
+    s = sub.add_parser("next", help="activate the next feature (WIP=1)")
     s.add_argument("--id")
     s.add_argument("--force", action="store_true")
-    s = sub.add_parser("verify")
+    s = sub.add_parser("verify", help="pass-gate: verification + project check")
     s.add_argument("id")
     s.add_argument("--skip-check", action="store_true", help="skip the project-wide check (not recommended)")
-    s = sub.add_parser("block")
+    s = sub.add_parser("block", help="mark the active feature blocked, with a reason")
     s.add_argument("id")
     s.add_argument("--reason", required=True)
-    s = sub.add_parser("unblock")
+    s = sub.add_parser("unblock", help="blocked -> not_started")
     s.add_argument("id")
-    s = sub.add_parser("add")
+    s = sub.add_parser("add", help="add a not_started feature")
     s.add_argument("--id", required=True)
     s.add_argument("--behavior", required=True)
     s.add_argument("--verify", required=True, help="shell command that exits 0 when the behavior is correct")
@@ -2691,17 +2848,17 @@ def build_parser() -> argparse.ArgumentParser:
                    help='agent CLI, default "claude" (or $HARNESS_AGENT_CMD); a JSON list for paths with spaces')
     s.add_argument("--commit", action="store_true", help="commit each passing feature after a clean exit-check")
     s.add_argument("--dry-run", action="store_true", help="print the prompts and commands, run nothing")
-    s = sub.add_parser("validate")
+    s = sub.add_parser("validate", help="check the feature list and the config")
     s.add_argument("--require", nargs="*", help="CATEGORY:N — require at least N features of that category")
-    s = sub.add_parser("docs")
+    s = sub.add_parser("docs", help="check the docs map and links")
     s.add_argument("--strict", action="store_true")
-    sub.add_parser("rules")
-    s = sub.add_parser("start")
+    sub.add_parser("rules", help="run the architecture rules")
+    s = sub.add_parser("start", help="clock in: state, baseline check")
     s.add_argument("--no-check", action="store_true")
-    s = sub.add_parser("exit-check")
+    s = sub.add_parser("exit-check", help="clock out: clean-state check")
     s.add_argument("--no-run", action="store_true", help="do not re-run check")
     s.add_argument("--full", action="store_true")
-    sub.add_parser("handoff")
+    sub.add_parser("handoff", help="refresh the auto block of PROGRESS.md")
     s = sub.add_parser("setup", help="run commands.setup (called by init.sh)")
     s.add_argument("--print-dev", action="store_true")
     s.add_argument("--run-dev", action="store_true")
@@ -2711,8 +2868,9 @@ def build_parser() -> argparse.ArgumentParser:
     s = sub.add_parser("report", help="print a loop run's report: theory checklist + timeline (latest run by default)")
     s.add_argument("run", nargs="?", help="run id (a directory name under .harness/runs/)")
     s.add_argument("--list", action="store_true", help="list runs with their outcome")
-    s = sub.add_parser("trace")
+    s = sub.add_parser("trace", help="the last runtime and hook records (.harness/trace.jsonl)")
     s.add_argument("-n", type=int, default=20)
+    s.add_argument("--grep", help="only records containing this text, e.g. hook-guard or a session id")
     return p
 
 
@@ -2726,11 +2884,47 @@ COMMANDS = {"check": cmd_check, "status": cmd_status, "next": cmd_next, "verify"
             "hook-session-end": cmd_hook_session_end, "statusline": cmd_statusline}
 
 
+HOOK_SWITCH_NAMES = {"hook-session-start": "session-start", "hook-prompt": "prompt", "hook-guard": "guard",
+                     "hook-activity": "activity", "hook-precompact": "precompact", "hook-stop": "stop",
+                     "hook-session-end": "session-end", "statusline": "statusline"}
+
+
 def main(argv: list[str] | None = None, root: Path | None = None) -> int:
     _configure_stdio()
     args = build_parser().parse_args(argv)
     h = Harness(root or find_root())
+    name = HOOK_SWITCH_NAMES.get(args.cmd)
+    off = h.cfg.get("hooks_off", [])
+    if name and isinstance(off, list) and name in off:
+        if name in ("guard", "stop"):  # a guardrail turned off is visible in the log
+            h.trace(args.cmd, "disabled", reason="hooks_off in .harness/config.json")
+        return 0
     return COMMANDS[args.cmd](h, args)
+
+
+def config_problems(cfg: dict) -> list[str]:
+    """R18: the project config against the keys and types the code reads (DEFAULT_CONFIG)."""
+    out = []
+    for key, value in cfg.items():
+        if key not in DEFAULT_CONFIG:
+            if key not in CONFIG_EXTRA_KEYS:
+                out.append(f"unknown key `{key}` in .harness/config.json (typo? the runtime never reads it)")
+            continue
+        want = DEFAULT_CONFIG[key]
+        if isinstance(want, bool) or want is None:
+            continue
+        if isinstance(want, (int, float)) and not isinstance(value, (int, float)) or \
+                isinstance(want, (str, list, dict)) and not isinstance(value, type(want)):
+            out.append(f"`{key}` should be a {type(want).__name__}, found {type(value).__name__}")
+    for key, allowed in (("scope_guard", ("ask", "deny", "off")), ("instruction_guard", ("ask", "off")),
+                         ("guard_failure", ("open", "closed")), ("scope_drift", ("warn", "error")),
+                         ("verify_check", ("quick", "full"))):
+        if key in cfg and cfg[key] not in allowed:
+            out.append(f"`{key}` must be one of {', '.join(allowed)}, found {cfg[key]!r}")
+    unknown_hooks = [x for x in cfg.get("hooks_off", []) or [] if x not in HOOK_SWITCH_NAMES.values()]
+    if unknown_hooks:
+        out.append(f"`hooks_off` names unknown hooks: {', '.join(map(str, unknown_hooks))}")
+    return out
 
 
 if __name__ == "__main__":

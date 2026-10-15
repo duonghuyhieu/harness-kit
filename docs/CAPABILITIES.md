@@ -135,6 +135,8 @@ The kit runs under its own harness:
 - `loop` is sequential (WIP=1) and needs the Claude Code CLI; no parallel worktrees and no scheduler (`/loop`, cron, CI)
   are generated — run it yourself or from your own scheduler. Reviewer quality depends on the model: the first real
   runs with haiku passed tests the runner never executed, which is why the mechanical test gate exists.
+- `loop` skips the harness setup features (category `harness`, H00x) when it picks the next feature: they change
+  `.harness/config.json` and the docs, which the loop protects; run them through `/hk-init`.
 - `loop` cannot complete a feature that must change harness-owned files (in this repo: runtime features, since
   `scripts/harness.py` is always restored and `harness.py upgrade` is denied). Do those by hand.
 - The `PreToolUse` hook is best effort: code the maker writes (its own tests) can still touch files. The post-session

@@ -200,6 +200,59 @@ class ClaudeHookTests(unittest.TestCase):
         if os.name == "nt":
             self.assertEqual(self.decision(self.write(".HARNESS/Session.json")), "deny")
 
+    # ---- 2.1.0: requirements R5, R11, R13, R18 and the instruction guard ----
+
+    def test_stop_requires_verification_after_the_last_change(self):
+        """R11: finishing a turn with changes the active feature's verification has not seen is blocked once."""
+        run_rt(self.root, "add", "--id", "F1", "--behavior", "b", "--verify", f"{PY} -c pass", "--scope", "app/*")
+        run_rt(self.root, "next", "--id", "F1")
+        run_rt(self.root, "start", "--no-check")
+        (self.root / "app" / "new_mod.py").write_text("X = 1\n", encoding="utf-8")
+        code, _, err = run_dispatcher(self.root, "stop", {"session_id": "s1"})
+        self.assertEqual(code, 2)
+        self.assertIn("not verified", err)
+        self.assertEqual(run_dispatcher(self.root, "stop", {"stop_hook_active": True})[0], 0)  # never loops
+        run_rt(self.root, "try", "F1")
+        self.assertEqual(run_dispatcher(self.root, "stop", {"session_id": "s1"})[0], 0)
+
+    def test_guard_failure_is_visible_or_closed(self):
+        """R5: a crashed guard fails open with a warning the user sees, or denies when guard_failure is closed."""
+        (self.root / "scripts" / "harness.py").write_text("raise RuntimeError('broken')\n", encoding="utf-8")
+        code, out, _ = run_dispatcher(self.root, "guard", self.write("app/x.py"))
+        self.assertEqual(code, 0)
+        self.assertIn("fail-open", json.loads(out)["systemMessage"])
+        set_config(self.root, guard_failure="closed")
+        out = hook_output(run_dispatcher(self.root, "guard", self.write("app/x.py"))[1])
+        self.assertEqual(out["permissionDecision"], "deny")
+
+    def test_instruction_files_inline_scripts_and_switches(self):
+        self.assertEqual(self.decision(self.write("AGENTS.md")), "ask")
+        self.assertEqual(self.decision(self.write(".claude/skills/hk-plan/SKILL.md")), "ask")
+        def bash(cmd):
+            return self.decision({"tool_name": "Bash", "tool_input": {"command": cmd}})
+        self.assertEqual(bash("python -c \"open('feature_list.json','w').write('[]')\""), "deny")
+        self.assertIsNone(bash("python -c \"import json; print(json.load(open('feature_list.json')))\""))
+        set_config(self.root, instruction_guard="off", hooks_off=["prompt"])
+        self.assertIsNone(self.decision(self.write("AGENTS.md")))
+        run_rt(self.root, "next")
+        self.assertEqual(run_dispatcher(self.root, "prompt", {"prompt": "hi"})[1].strip(), "")  # switched off
+        set_config(self.root, hooks_off=["guard"], bogus_key=1)
+        self.assertIsNone(self.decision(self.write(".harness/session.json")))
+        self.assertIn('"disabled"', (self.root / ".harness/trace.jsonl").read_text(encoding="utf-8"))  # logged
+        code, out = run_rt(self.root, "validate")
+        self.assertNotEqual(code, 0)
+        self.assertIn("unknown key `bogus_key`", out)
+
+    def test_injected_context_is_logged_with_a_hash(self):
+        """R13: what the model saw can be traced back: session id, event, content hash."""
+        run_dispatcher(self.root, "session-start", {"source": "startup", "session_id": "sess-42"})
+        recs = [json.loads(line) for line in (self.root / ".harness/trace.jsonl").read_text(encoding="utf-8").splitlines()]
+        rec = next(r for r in recs if r["cmd"] == "hook-session-start")
+        self.assertEqual(rec["session"], "sess-42")
+        self.assertEqual(len(rec["context_sha256"]), 16)
+        code, out = run_rt(self.root, "trace", "--grep", "sess-42")
+        self.assertIn("context_sha256", out)
+
     def test_guard_reads_utf8_paths_whatever_the_code_page(self):
         """Windows decoded piped stdin with the ANSI code page: non-ASCII paths slipped past the guard."""
         with tempfile.TemporaryDirectory(prefix="dự-án-") as d:
@@ -374,6 +427,58 @@ class InstallerTests(unittest.TestCase):
             out = quiet_install(root)
             self.assertEqual((root / "scripts/harness.py").read_text(encoding="utf-8"), "print('my own test harness')\n")
             self.assertIn("is not the harness-kit runtime", out)
+
+    def test_update_respects_removals_and_retires_obsolete_rules(self):
+        with tempfile.TemporaryDirectory() as d:
+            root = Path(d)
+            make_python_project(root)
+            quiet_install(root)
+            sp, mp = root / ".claude/settings.json", root / ".claude/harness-kit.json"
+            s = json.loads(sp.read_text(encoding="utf-8"))
+            self.assertIn("PowerShell(git push --force *)", s["permissions"]["deny"])  # keeps the PowerShell tool on
+            s["permissions"]["ask"].remove("Bash(git push *)")
+            del s["hooks"]["UserPromptSubmit"]
+            del s["statusLine"]
+            s["permissions"]["allow"].append("Bash(python scripts/harness.py *)")  # as 2.0.0 added it
+            sp.write_text(json.dumps(s), encoding="utf-8")
+            m = json.loads(mp.read_text(encoding="utf-8"))
+            m["settings_added"]["allow"].append("Bash(python scripts/harness.py *)")
+            mp.write_text(json.dumps(m), encoding="utf-8")
+            out = installer.update(root)
+            s = json.loads(sp.read_text(encoding="utf-8"))
+            self.assertNotIn("Bash(git push *)", s["permissions"]["ask"])
+            self.assertNotIn("UserPromptSubmit", s["hooks"])
+            self.assertNotIn("statusLine", s)
+            self.assertNotIn("Bash(python scripts/harness.py *)", s["permissions"]["allow"])  # retired
+            self.assertIn("kept your removal", out)
+            code, report = installer.doctor(root)
+            self.assertEqual(code, 0, report)  # a hook removed on purpose is a warning, not a failure
+            self.assertIn("[WARN] hooks registered", report)
+            installer.update(root, force=True)  # --force restores everything
+            s = json.loads(sp.read_text(encoding="utf-8"))
+            self.assertIn("UserPromptSubmit", s["hooks"])
+            self.assertIn("Bash(git push *)", s["permissions"]["ask"])
+            dry = installer.install(root, dry_run=True, diff=True)  # R9: dry-run with a diff
+            self.assertIn("Diff of existing files", dry)
+            installer.uninstall(root)
+            self.assertFalse(sp.exists())  # nothing of the user's was in it, not even a leftover $schema
+
+    def test_loop_leaves_harness_setup_features_to_hk_init(self):
+        with tempfile.TemporaryDirectory() as d:
+            root = Path(d)
+            make_python_project(root)
+            quiet_install(root)
+            run_rt(root, "add", "--id", "F1", "--behavior", "b", "--verify", f"{PY} -c pass")
+            picked = runtime._pick_loop_feature(runtime.Harness(root), None)
+            self.assertEqual(picked["id"], "F1")
+
+    def test_every_config_key_the_code_reads_has_a_default(self):
+        """R18: the config schema (DEFAULT_CONFIG + validation) matches the keys the runtime actually reads."""
+        src = Path(runtime.__file__).read_text(encoding="utf-8")
+        read = set(re.findall(r'cfg\.get\("([a-z_]+)"', src)) | set(re.findall(r'cfg\["([a-z_]+)"\]', src))
+        self.assertFalse(read - set(runtime.DEFAULT_CONFIG), read - set(runtime.DEFAULT_CONFIG))
+        self.assertEqual(runtime.config_problems(dict(runtime.DEFAULT_CONFIG)), [])
+        self.assertTrue(runtime.config_problems({"scope_guard": "maybe", "trace_max_lines": "many"}))
 
     def test_payload_frontmatter_is_valid(self):
         """Skill names match their directory (Agent Skills spec); agents declare name, description and tools."""

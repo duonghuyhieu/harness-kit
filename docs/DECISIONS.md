@@ -129,3 +129,30 @@
   installed project is an `update` (no proposals for identical files, no bogus legacy note, manifest untouched when
   nothing changed, no machine-specific kit path in committed files); postinstall runs only the first time and never
   in CI. install.ps1 runs in a script block and survives a Python probe that writes to stderr.
+
+## 2026-10-15 — 2.1.0: the remaining requirements and review leftovers
+
+- R1: path-scoped rules in `.claude/rules/` (harness state files, tests) load only when those files are touched.
+- R5: a failed hook is visible (`systemMessage`), not only on stderr; `"guard_failure": "closed"` is the opt-in
+  fail-closed guard (the dispatcher writes the deny itself, so it does not depend on `onFailure`, 2.1.295+).
+- R9: `--diff` prints a unified diff of every existing file a plan changes. Updates keep entries the user removed
+  (rules, hooks, status line: recorded as `settings_offered` in the manifest), retire rules an older version added
+  (2.0.0's `Bash(python scripts/harness.py *)`), and `--force` restores everything. Uninstall removes the `$schema`
+  key the harness added.
+- R11: the Stop hook blocks once when the active feature has files newer than its last recorded verification
+  (`try` now leaves a trace record).
+- R13: every injected context (SessionStart, UserPromptSubmit) and every guard decision is traced with the session
+  id and a content hash; the trace rotates; `trace --grep`.
+- R16: state files are written atomically (temporary file + rename, retried on Windows sharing errors).
+- R18: every key the runtime reads has a default; `validate` checks unknown keys, types and enum values; a test pins
+  that the code reads no key without a default. Per-hook switches (`hooks_off`); turning off `guard`/`stop` is logged.
+- R21: `doctor` compares the Claude Code version with the one the hooks were verified on (2.1.287) and names the
+  `onFailure` minimum (2.1.295).
+- Instruction files (AGENTS.md, CLAUDE.md, `.claude/agents|skills|rules|output-styles/`) ask before an edit
+  (`instruction_guard`): instructions an agent writes are input to review. `python -c`/`node -e` one-liners that
+  write a state file are denied (heuristic).
+- PowerShell twins of every Bash rule: on Windows with Git Bash, a Bash deny rule alone turns the PowerShell tool off.
+- Kept by design: `next` while a feature is active prints it and exits 0 (an idempotent "what am I on"); the status
+  line keeps its relative path (Claude Code documents no project-dir variable for it; from a subdirectory it shows
+  an error instead of the harness line — listed in Known Issues).
+

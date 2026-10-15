@@ -8,6 +8,7 @@ Safety principles:
 from __future__ import annotations
 
 import datetime as _dt
+import difflib
 import fnmatch
 import json
 import os
@@ -200,12 +201,13 @@ def make_features(inv: dict, legacy_entry: list[str]) -> dict:
             "behavior": f"Merge legacy instructions ({', '.join(legacy_entry)}) into AGENTS.md (short router) + "
                         f"docs/<topic>.md; see the proposals in .harness/proposals/.",
             "verification": f"{H} docs --strict", "status": "not_started", "depends_on": [], "evidence": None})
-    feats.append({
-        "id": "H006", "priority": 6, "category": "harness",
-        "behavior": "Optimization backlog: grade modules A–D (in docs/QUALITY.md when the level generates it) and create "
-                    "at least 3 `refactor` features with measurable verification commands for low-scoring hotspots/modules.",
-        "verification": f"{H} validate --require refactor:3", "status": "not_started", "depends_on": ["H004"],
-        "evidence": None})
+    if inv.get("code_files", 0):  # an empty project has no modules to grade yet
+        feats.append({
+            "id": "H006", "priority": 6, "category": "harness",
+            "behavior": "Optimization backlog: grade modules A–D (in docs/QUALITY.md when the level generates it) and create "
+                        "at least 3 `refactor` features with measurable verification commands for low-scoring hotspots/modules.",
+            "verification": f"{H} validate --require refactor:3", "status": "not_started", "depends_on": ["H004"],
+            "evidence": None})
     return {
         "project": inv["name"],
         "last_updated": _dt.date.today().isoformat(),
@@ -351,7 +353,10 @@ def make_claude_settings(inv: dict, python: str = "python", statusline: bool = T
     launchers = dict.fromkeys(("python", "python3", python))  # what agents type, plus the hooks' interpreter
     allow = [f"Bash({py} scripts/harness.py {sub}{rest})" for py in launchers
              for sub in SAFE_RUNTIME_COMMANDS for rest in ("", " *")]
-    allow += ["Bash(./init.sh)", "Bash(git status *)", "Bash(git diff *)", "Bash(git log *)"]
+    allow += [f"PowerShell({py} scripts/harness.py {sub}{rest})" for py in launchers
+              for sub in SAFE_RUNTIME_COMMANDS for rest in ("", " *")]
+    allow += ["Bash(./init.sh)", "Bash(git status *)", "Bash(git diff *)", "Bash(git log *)",
+              "PowerShell(./init.ps1)", "PowerShell(git status *)", "PowerShell(git diff *)", "PowerShell(git log *)"]
     for key in ("test", "lint", "typecheck", "build", "e2e"):
         for step in inv["commands"].get(key, []):
             cmd = step["cmd"].split("  #")[0].strip()
@@ -367,8 +372,13 @@ def make_claude_settings(inv: dict, python: str = "python", statusline: bool = T
         "$schema": "https://json.schemastore.org/claude-code-settings.json",
         "permissions": {
             "allow": list(dict.fromkeys(allow)),
-            "ask": ["Bash(rm -rf *)", "Bash(git reset --hard *)", "Bash(git clean *)", "Bash(git push *)"],
+            "ask": ["Bash(rm -rf *)", "Bash(git reset --hard *)", "Bash(git clean *)", "Bash(git push *)",
+                    "PowerShell(Remove-Item * -Recurse *)", "PowerShell(git reset --hard *)", "PowerShell(git clean *)",
+                    "PowerShell(git push *)"],
+            # PowerShell twins of the Bash deny rules: on Windows with Git Bash, a Bash deny rule alone turns the
+            # PowerShell tool off for the session (Claude Code permissions docs)
             "deny": ["Bash(git push --force *)", "Bash(git push -f *)",
+                     "PowerShell(git push --force *)", "PowerShell(git push -f *)",
                      "Read(./.env)", "Read(./.env.local)", "Read(./.env.production)"],
         },
         "hooks": hooks,
@@ -489,7 +499,22 @@ class Plan:
         data.setdefault("installed_at", data["updated_at"])
         _write(self.root / MANIFEST, _as_json(data))
 
-    def summary(self, dry_run: bool) -> str:
+    def diffs(self, limit: int = 80) -> list[str]:
+        """Unified diffs of what the plan would change in existing files (R9), shortened per file."""
+        out = []
+        for rel, content in self.replace + self.merged:
+            p = self.root / rel
+            old = p.read_text(encoding="utf-8", errors="replace").splitlines() if p.is_file() else []
+            lines = list(difflib.unified_diff(old, content.splitlines(), f"a/{rel}", f"b/{rel}", lineterm="", n=2))
+            if lines:
+                out += [f"    {l}" for l in lines[:limit]]
+                if len(lines) > limit:
+                    out.append(f"    ... {len(lines) - limit} more diff lines")
+        for rel in self.delete:
+            out.append(f"    deleted: {rel}")
+        return out
+
+    def summary(self, dry_run: bool, diff: bool = False) -> str:
         verb = "Will create" if dry_run else "Created"
         out = [f"{verb} {len(self.create)} files:"] + [f"  + {p}" for p, _ in self.create]
         if self.proposals:
@@ -510,6 +535,9 @@ class Plan:
         if self.notes:
             out.append("Notes:")
             out += [f"  ! {n}" for n in self.notes]
+        if diff:
+            d = self.diffs()
+            out += ["Diff of existing files:"] + (d or ["    (no existing file changes)"])
         return "\n".join(out)
 
 
@@ -732,9 +760,23 @@ def _is_harness_statusline(value) -> bool:
     return isinstance(value, dict) and "harness_hook.py" in str(value.get("command", ""))
 
 
-def merge_claude_settings(existing: dict, ours: dict) -> tuple[dict | None, list[str]]:
+def offered_settings(ours: dict) -> dict:
+    """What an install offered, recorded in the manifest: on the next update, an offered entry that is gone from
+    settings.json was removed by the user on purpose and is not added again."""
+    return {"permissions": ours["permissions"], "hooks": sorted(ours["hooks"]), "statusLine": "statusLine" in ours}
+
+
+def _has_harness_hook(entries) -> bool:
+    return isinstance(entries, list) and any(_is_harness_hook(h) for e in entries if isinstance(e, dict)
+                                             and isinstance(e.get("hooks"), list) for h in e["hooks"])
+
+
+def merge_claude_settings(existing: dict, ours: dict, offered: dict | None = None,
+                          obsolete: dict | None = None) -> tuple[dict | None, list[str]]:
     """Additive merge: keep every user key/entry, append our missing permission rules, replace only the harness's own
     hooks (v1 and v2 spellings) per event, and set the status line only when the user has none.
+    `offered` (from the manifest of the previous install): entries offered then and missing now were removed by the
+    user and stay removed. `obsolete`: rules a previous version added that this version no longer ships (removed).
     Returns (merged or None when the structure cannot be merged safely, notes)."""
     merged = json.loads(json.dumps(existing))
     perms, hooks = merged.setdefault("permissions", {}), merged.setdefault("hooks", {})
@@ -746,28 +788,55 @@ def merge_claude_settings(existing: dict, ours: dict) -> tuple[dict | None, list
     if any(not isinstance(hooks.get(event, []), list) for event in ours["hooks"]):
         return None, []
     notes, user_allow = [], {r for r in perms.get("allow", []) if isinstance(r, str)}
+    offered = offered or {}
+    was_offered = offered.get("permissions", {}) if isinstance(offered.get("permissions"), dict) else {}
+    for key, rules in (obsolete or {}).items():
+        if isinstance(perms.get(key), list) and any(r in perms[key] for r in rules):
+            perms[key] = [r for r in perms[key] if r not in rules]
+            notes.append(f"removed the {key} rule(s) {', '.join(rules)} that an older harness-kit added")
+    declined = []
     for key, rules in ours["permissions"].items():
         current = perms.setdefault(key, [])
         for rule in rules:
             if key in ("ask", "deny") and rule in user_allow:  # would silently override the user's own allow
                 notes.append(f"kept your allow rule {rule}; the harness '{key}' rule for it was not added")
-            elif rule not in current:
+            elif rule in current:
+                continue
+            elif rule in was_offered.get(key, []):
+                declined.append(rule)  # offered last time, gone now: the user removed it
+            else:
                 current.append(rule)
+    if declined:
+        notes.append(f"kept your removal of {len(declined)} permission rule(s) (e.g. {declined[0]})")
     for event, entries in ours["hooks"].items():
+        if event in offered.get("hooks", []) and not _has_harness_hook(hooks.get(event)):
+            notes.append(f"kept your removal of the harness {event} hook")
+            continue
         hooks[event] = _without_harness_hooks(hooks.get(event, [])) + entries
+    if not hooks:
+        del merged["hooks"]
     if "statusLine" in ours:
-        if "statusLine" not in merged or _is_harness_statusline(merged["statusLine"]):
+        if offered.get("statusLine") and "statusLine" not in merged:
+            notes.append("kept your removal of the harness status line")
+        elif "statusLine" not in merged or _is_harness_statusline(merged["statusLine"]):
             merged["statusLine"] = ours["statusLine"]
         else:
             notes.append("kept your statusLine; the harness status line was not installed")
+    for key in ("allow", "ask", "deny"):
+        if perms.get(key) == []:
+            del perms[key]
+    if not perms:
+        del merged["permissions"]
     merged.setdefault("$schema", ours["$schema"])
     return merged, notes
 
 
-def strip_claude_settings(existing: dict, added_rules: dict) -> dict:
-    """Inverse of the merge, for `uninstall`: drop the harness hooks and status line, and the permission rules the
-    harness added (recorded in the manifest), keeping everything else exactly."""
+def strip_claude_settings(existing: dict, added_rules: dict, schema_added: bool = False) -> dict:
+    """Inverse of the merge, for `uninstall`: drop the harness hooks and status line, the permission rules the
+    harness added (recorded in the manifest) and the `$schema` key if the harness added it; keep everything else."""
     out = json.loads(json.dumps(existing))
+    if schema_added and out.get("$schema") == "https://json.schemastore.org/claude-code-settings.json":
+        del out["$schema"]
     hooks = out.get("hooks")
     if isinstance(hooks, dict):
         for event in list(hooks):
@@ -795,9 +864,12 @@ def _plan_claude_settings(plan: Plan, inv: dict, python: str = "python", statusl
     ours = make_claude_settings(inv, python, statusline)
     path = plan.root / ".claude" / "settings.json"
     blocked = _blocked_path(plan.root, ".claude/settings.json", want_dir=False)
+    manifest = _read_manifest(plan.root)
+    plan.manifest_extra["settings_offered"] = offered_settings(ours)
     if not path.exists() and not blocked:
         plan.add(".claude/settings.json", _as_json(ours))
         plan.settings_added = ours["permissions"]
+        plan.manifest_extra["schema_added"] = True
         return
     existing, notes = None, []
     if not blocked:
@@ -806,12 +878,18 @@ def _plan_claude_settings(plan: Plan, inv: dict, python: str = "python", statusl
         except (ValueError, OSError):
             existing = None
     merged = None
+    prior = manifest.get("settings_added", {}) if isinstance(manifest.get("settings_added"), dict) else {}
     if isinstance(existing, dict):
-        merged, notes = merge_claude_settings(existing, ours)
+        # rules an older version added and this one no longer ships (e.g. 2.0.0's `Bash(python scripts/harness.py *)`)
+        obsolete = {k: [r for r in v if r not in ours["permissions"].get(k, [])] for k, v in prior.items()}
+        offered = None if plan.force else manifest.get("settings_offered")
+        merged, notes = merge_claude_settings(existing, ours, offered, {k: v for k, v in obsolete.items() if v})
+        plan.manifest_extra["schema_added"] = bool(manifest.get("schema_added")) or "$schema" not in existing
     if merged is not None:  # remember which rules the harness itself added, so uninstall removes only those
         before = existing.get("permissions", {}) if isinstance(existing.get("permissions"), dict) else {}
-        prior = _read_manifest(plan.root).get("settings_added", {})
-        plan.settings_added = {k: [r for r in v if r not in before.get(k, []) or r in prior.get(k, [])]
+        now = merged.get("permissions", {})
+        plan.settings_added = {k: [r for r in v if r in now.get(k, []) and (r not in before.get(k, []) or
+                                                                            r in prior.get(k, []))]
                                for k, v in ours["permissions"].items()}
     if merged is None:
         plan.proposals.append((".claude/settings.json", _as_json(ours)))
@@ -844,18 +922,23 @@ def _policy_notes(inv: dict, legacy_entry: list[str]) -> list[str]:
         notes.append(f"Legacy instructions found: {', '.join(legacy_entry)} → feature H005 requires merging them "
                      f"into AGENTS.md + docs/.")
     if not inv["is_git"]:
-        notes.append("Project does not use git: the harness needs git for checkpoints/evidence. Use --git-init.")
+        notes.append("Project does not use git: the harness needs git for checkpoints/evidence. Run `git init` "
+                     "(or install with --git-init).")
     if not inv["stacks"]:
         notes.append("No stack detected: fill in commands in .harness/config.json by hand.")
     if not inv["commands"]["test"]:
         notes.append("No test command found: feedback is the weakest link — feature H002 must add one.")
+    if any(st.get("name") == "python" for st in inv["stacks"]) and not any(
+            (Path(inv["root"]) / d / "pyvenv.cfg").exists() for d in (".venv", "venv", "env")):
+        notes.append("Python project without a virtualenv: `setup` installs into whichever Python is active — create "
+                     "and activate one first (python -m venv .venv).")
     if not inv["has_gitignore"]:
         notes.append("Missing .gitignore in the project root.")
     return notes
 
 
 HARNESS_GITIGNORE = ["trace.jsonl", "last-check.json", "session.json", "loop/", "runs/", "activity.jsonl",
-                     "activity.jsonl.tmp", "hook-state.json", "compact-snapshot.md", "proposals/"]
+                     "activity.jsonl.tmp", "hook-state.json", "compact-snapshot.md", "proposals/", ".*.tmp"]
 
 
 def _plan_harness_gitignore(plan: "Plan") -> None:
@@ -946,10 +1029,10 @@ def git(root: Path, *args: str) -> subprocess.CompletedProcess:
 
 def retrofit(root: Path, level: str = "standard", dry_run: bool = False, git_init: bool = False,
              commit: bool = False, claude: bool = False, python: str = "python", statusline: bool = True,
-             force: bool = False) -> str:
+             force: bool = False, diff: bool = False) -> str:
     plan, inv = build_plan(root, level, claude, python, statusline, force)
     if dry_run:
-        return plan.summary(dry_run=True)
+        return plan.summary(dry_run=True, diff=diff)
     root = Path(inv["root"])
     if git_init and not inv["is_git"]:
         git(root, "init")

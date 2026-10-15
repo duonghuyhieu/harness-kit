@@ -45,8 +45,9 @@ def _instruction_checks(root: Path, inv: dict) -> list[dict]:
                f"Split {entry.name if entry else 'the entry file'} ({lines} lines) into a router + docs/<topic>.md."),
         _check("Lists verification commands", re.search(verify_re, text),
                "State the test/lint/type-check/full-check commands explicitly in the instruction file."),
-        _check("Points to topic docs in docs/", "docs/" in text,
-               "Add a 'Docs map' section linking docs/<topic>.md + when to read each."),
+        _check("Points to topic docs in docs/, no unfilled placeholders", "docs/" in text and FILL_MARKER not in text,
+               "Add a 'Docs map' section linking docs/<topic>.md + when to read each, and fill in every "
+               f"{FILL_MARKER} placeholder (run /hk-init)."),
         _check("Architecture doc exists", bool(inv["architecture_files"]) or any(root.glob("*/**/ARCHITECTURE.md")),
                "Write docs/ARCHITECTURE.md: module map, dependency direction, boundaries."),
     ]
