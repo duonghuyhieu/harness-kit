@@ -472,6 +472,32 @@ class InstallerTests(unittest.TestCase):
             picked = runtime._pick_loop_feature(runtime.Harness(root), None)
             self.assertEqual(picked["id"], "F1")
 
+    def test_mini_toml_matches_tomllib(self):
+        """Python 3.10 has no tomllib: the fallback reader must read pyproject/Cargo files the same way (CI 3.10)."""
+        from harness_kit import detect
+        docs = [
+            '[project]\nname = "app"\nversion = "1.0"\nrequires-python = ">=3.10"\n'
+            'dependencies = [\n  "fastapi>=0.1",  # web\n  \'pydantic\',\n]\n'
+            '[project.optional-dependencies]\ndev = ["pytest", "ruff"]\n'
+            '[tool.pytest.ini_options]\ntestpaths = ["tests"]\naddopts = "-q"\n'
+            '[tool.poetry.dependencies]\npython = "^3.10"\nrequests = { version = "^2.31", optional = true }\n'
+            '[tool.ruff]\nline-length = 120\n[tool.ruff.lint]\nselect = ["E", "F"]\n',
+            '[package]\nname = "crate"\nedition = "2021"\n[workspace]\nmembers = ["a", "b/*"]\n'
+            '[[bin]]\nname = "x"\npath = "src/x.rs"\n[[bin]]\nname = "y"\n'
+            '[dependencies]\nserde = { version = "1", features = ["derive"] }\n'
+            '"quoted.key" = 1\nsite."google.com" = true\nf = 1.5e3\nn = 1_000\nd = 1979-05-27\n'
+            "s = 'C:\\\\no\\\\escape'\nm = \"\"\"\nline1\nline2\"\"\"\ne = \"tab\\tq\\\"u\\u00e9\"\n",
+            '[toolchain]\nchannel = "1.78"\ncomponents = [ "rustfmt", "clippy" ]\n',
+        ]
+        try:
+            import tomllib
+        except ModuleNotFoundError:
+            self.skipTest("tomllib needed as the oracle")
+        for doc in docs:
+            self.assertEqual(detect.mini_toml(doc), tomllib.loads(doc))
+        with self.assertRaises(ValueError):
+            detect.mini_toml("[broken\nx = ")
+
     def test_every_config_key_the_code_reads_has_a_default(self):
         """R18: the config schema (DEFAULT_CONFIG + validation) matches the keys the runtime actually reads."""
         src = Path(runtime.__file__).read_text(encoding="utf-8")

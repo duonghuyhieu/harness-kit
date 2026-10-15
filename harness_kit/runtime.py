@@ -41,7 +41,7 @@ import sys
 import time
 from pathlib import Path
 
-VERSION = "2.1.1"
+VERSION = "2.1.2"
 STATES = ("not_started", "active", "blocked", "passing")
 STATUS_ALIASES = {"not_started": "not_started", "todo": "not_started", "planned": "not_started", "fail": "not_started",
                   "active": "active", "in_progress": "active", "blocked": "blocked",

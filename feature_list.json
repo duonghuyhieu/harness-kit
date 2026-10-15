@@ -820,6 +820,34 @@
       "priority": 9,
       "activated_at": "2026-10-15T23:19:24+07:00",
       "activated_commit": "1828ba71b6d66a2a6b55a1fe93a2226de3141ec6"
+    },
+    {
+      "id": "V010",
+      "category": "bug",
+      "behavior": "2.1.2: Python 3.10 (no tomllib) reads pyproject/Cargo TOML through a stdlib fallback reader, same result as tomllib",
+      "verification": "python -m unittest tests.test_v2 -q",
+      "status": "passing",
+      "depends_on": [],
+      "evidence": {
+        "verified_at": "2026-10-15T23:35:32+07:00",
+        "commit": "987c2fa",
+        "command": "python -m unittest tests.test_v2 -q",
+        "exit_code": 0,
+        "duration_s": 31.8,
+        "project_check": "quick",
+        "output_tail": "----------------------------------------------------------------------\nRan 26 tests in 31.687s\n\nOK"
+      },
+      "scope": [
+        "harness_kit/*",
+        "scripts/harness.py",
+        "tests/*",
+        "package.json",
+        "docs/*",
+        "*.md"
+      ],
+      "priority": 10,
+      "activated_at": "2026-10-15T23:32:36+07:00",
+      "activated_commit": "987c2fae05aeec4da9a49cb08e0599c7275525a3"
     }
   ]
 }

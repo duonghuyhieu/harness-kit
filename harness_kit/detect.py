@@ -5,6 +5,7 @@ shared by audit.py and scaffold.py.
 """
 from __future__ import annotations
 
+import datetime as _dt
 import fnmatch
 import json
 import os
@@ -47,12 +48,174 @@ def _read_json(path: Path) -> dict:
 
 
 def _read_toml(path: Path) -> dict:
-    if tomllib is None:
+    try:
+        text = path.read_text(encoding="utf-8")
+    except OSError:
         return {}
     try:
-        return tomllib.loads(path.read_text(encoding="utf-8"))
-    except (OSError, ValueError):
+        return tomllib.loads(text) if tomllib is not None else mini_toml(text)
+    except ValueError:
         return {}
+
+
+def mini_toml(text: str) -> dict:
+    """A small TOML reader for Python 3.10 (no tomllib): tables, arrays of tables, dotted keys, strings, numbers,
+    booleans, arrays, inline tables and dates — what pyproject.toml, Cargo.toml and rust-toolchain.toml use.
+    Raises ValueError on input it does not understand (the caller then ignores the file)."""
+    root: dict = {}
+    cur = root
+    i, n = 0, len(text)
+
+    def skip_ws(j: int, newlines: bool = False) -> int:
+        while j < n:
+            c = text[j]
+            if c in " \t\r" or (newlines and c == "\n"):
+                j += 1
+            elif c == "#":
+                while j < n and text[j] != "\n":
+                    j += 1
+            else:
+                break
+        return j
+
+    def string(j: int) -> tuple[str, int]:
+        for quote in ('"""', "'''"):
+            if text.startswith(quote, j):
+                end = text.find(quote, j + 3)
+                if end < 0:
+                    raise ValueError("unterminated string")
+                body = text[j + 3:end]
+                body = body[1:] if body.startswith("\n") else body
+                return (_unescape(body) if quote == '"""' else body), end + 3
+        q, k, out = text[j], j + 1, []
+        while k < n and text[k] != q:
+            if text[k] == "\n":
+                raise ValueError("newline in string")
+            if q == '"' and text[k] == "\\" and k + 1 < n:
+                out.append(text[k:k + 2])
+                k += 2
+                continue
+            out.append(text[k])
+            k += 1
+        if k >= n:
+            raise ValueError("unterminated string")
+        s = "".join(out)
+        return (_unescape(s) if q == '"' else s), k + 1
+
+    def key(j: int) -> tuple[list[str], int]:
+        parts = []
+        while True:
+            j = skip_ws(j)
+            if j < n and text[j] in "\"'":
+                s, j = string(j)
+                parts.append(s)
+            else:
+                m = re.match(r"[A-Za-z0-9_-]+", text[j:])
+                if not m:
+                    raise ValueError(f"bad key at {j}")
+                parts.append(m.group(0))
+                j += m.end()
+            j = skip_ws(j)
+            if j < n and text[j] == ".":
+                j += 1
+                continue
+            return parts, j
+
+    def value(j: int):
+        j = skip_ws(j)
+        c = text[j] if j < n else ""
+        if c in "\"'":
+            return string(j)
+        if c in "[{":
+            closing, coll, j = ("]", [], j + 1) if c == "[" else ("}", {}, j + 1)
+            while True:
+                j = skip_ws(j, newlines=closing == "]")
+                if j < n and text[j] == closing:
+                    return coll, j + 1
+                if closing == "]":
+                    v, j = value(j)
+                    coll.append(v)
+                else:
+                    parts, j = key(j)
+                    if j >= n or text[j] != "=":
+                        raise ValueError(f"expected = at {j}")
+                    v, j = value(j + 1)
+                    _set(coll, parts, v)
+                j = skip_ws(j, newlines=closing == "]")
+                if j < n and text[j] == ",":
+                    j += 1
+                elif not (j < n and text[j] == closing):
+                    raise ValueError(f"bad {'array' if closing == ']' else 'inline table'} at {j}")
+        m = re.match(r"(true|false)\b", text[j:])
+        if m:
+            return m.group(1) == "true", j + m.end()
+        m = re.match(r"[0-9A-Za-z:+\-_.]+", text[j:])
+        if m:
+            raw = m.group(0)
+            for conv in (int, float):
+                try:
+                    return conv(raw.replace("_", "")), j + m.end()
+                except ValueError:
+                    pass
+            if re.match(r"\d{4}-\d{2}-\d{2}|\d{2}:\d{2}", raw):  # dates and times, as tomllib returns them
+                iso = raw[:-1] + "+00:00" if raw.endswith("Z") else raw
+                for conv in (_dt.date.fromisoformat, _dt.datetime.fromisoformat, _dt.time.fromisoformat):
+                    try:
+                        return conv(iso), j + m.end()
+                    except ValueError:
+                        pass
+        raise ValueError(f"bad value at {j}")
+
+    while True:
+        i = skip_ws(i, newlines=True)
+        if i >= n:
+            return root
+        if text.startswith("[[", i):
+            parts, i = key(i + 2)
+            if not text.startswith("]]", i):
+                raise ValueError("bad array-of-tables header")
+            i += 2
+            parent = root
+            for p in parts[:-1]:
+                parent = parent.setdefault(p, {})
+                parent = parent[-1] if isinstance(parent, list) else parent
+            lst = parent.setdefault(parts[-1], [])
+            if not isinstance(lst, list):
+                raise ValueError("table redefined as array")
+            cur = {}
+            lst.append(cur)
+        elif text[i] == "[":
+            parts, i = key(i + 1)
+            if i >= n or text[i] != "]":
+                raise ValueError("bad table header")
+            i += 1
+            cur = root
+            for p in parts:
+                cur = cur.setdefault(p, {})
+                cur = cur[-1] if isinstance(cur, list) else cur
+        else:
+            parts, i = key(i)
+            if i >= n or text[i] != "=":
+                raise ValueError(f"expected = at {i}")
+            v, i = value(i + 1)
+            _set(cur, parts, v)
+        i = skip_ws(i)
+        if i < n and text[i] != "\n":
+            raise ValueError(f"trailing characters at {i}")
+
+
+def _set(tbl: dict, parts: list[str], v) -> None:
+    for p in parts[:-1]:
+        tbl = tbl.setdefault(p, {})
+    tbl[parts[-1]] = v
+
+
+_ESCAPES = {"b": "\b", "t": "\t", "n": "\n", "f": "\f", "r": "\r", '"': '"', "\\": "\\"}
+
+
+def _unescape(s: str) -> str:
+    return re.sub(r"\\(u[0-9A-Fa-f]{4}|U[0-9A-Fa-f]{8}|[btnfr\"\\])",
+                  lambda m: chr(int(m.group(1)[1:], 16)) if m.group(1)[0] in "uU" else _ESCAPES[m.group(1)], s)
 
 
 def _read_text(path: Path) -> str:
