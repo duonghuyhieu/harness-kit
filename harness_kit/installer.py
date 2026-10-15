@@ -46,7 +46,7 @@ def install(root: Path, level: str = "standard", python: str | None = None, stat
                   f"right away (hooks run with `{py}`).\n"
                   f"  Optional: type /hk-init once to fill in the project knowledge (AGENTS.md, docs/) and the "
                   f"verification baseline; /hk-help shows every command.\n"
-                  f"  Health check any time: harness doctor \"{root}\"")
+                  f"  Health check any time: {py} \"{(scaffold.KIT_ROOT / 'harness.py').as_posix()}\" doctor \"{root}\"")
 
 
 def _condense(summary: str) -> str:
