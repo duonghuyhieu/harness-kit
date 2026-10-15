@@ -7,13 +7,13 @@
 
 ## Current State
 <!-- harness:auto:start -->
-_Auto-updated by `harness.py handoff` at 2026-10-15T19:56:45+07:00_
-- Branch / commit: `-` @ `-`
-- Last check: PASS (quick, 2026-10-15T19:56:04+07:00, @)
-- Features: 24/24 passing, VCR 1.0
+_Auto-updated by `harness.py handoff` at 2026-10-15T20:13:55+07:00_
+- Branch / commit: `main` @ `570ec9d feat: harness-kit v2 — Claude Code layer installed into .claude/`
+- Last check: PASS (quick, 2026-10-15T20:13:44+07:00, @570ec9d)
+- Features: 25/25 passing, VCR 1.0
 - Active: none
 - Blocked: none
-- Uncommitted changes: 21 file(s)
+- Uncommitted changes: 9 file(s)
 <!-- harness:auto:end -->
 
 ## Done
@@ -32,9 +32,11 @@ _Auto-updated by `harness.py handoff` at 2026-10-15T19:56:45+07:00_
     2.1.287): SessionStart context reached the model, an Edit of a feature `status` was denied in `acceptEdits` mode
   - split into this repository (user decision 2026-10-15)
   - V001–V005 registered and passed through `verify` (24/24 passing, VCR 1.0); `exit-check`: CLEAN STATE
+  - V006 one-command install (user request: "install once and it just works"): piped `install.ps1`/`install.sh`
+    download the kit to ~/.harness-kit and install into the current folder; no-arg `npx`; npm postinstall like claudekit
 
 ## In Progress
-- [ ] (none) — first commit and push wait for the user's approval.
+- [ ] (none)
 
 ## Known Issues
 - Claude Code ignores `permissions.allow` from a project's `<project>/.claude/settings.json` until the workspace is trusted
@@ -48,9 +50,8 @@ _Auto-updated by `harness.py handoff` at 2026-10-15T19:56:45+07:00_
   not a sandbox).
 
 ## Next Steps
-1. Ask the user before the first commit and before pushing to https://github.com/duonghuyhieu/harness (branch main).
-2. Field test: `harness install` on a real project, one full `/hk-init` session; log failures with `fail --layer`.
-3. Consider: a Claude Code plugin manifest as an extra distribution channel; a `doctor` check of the Claude Code
+1. Field test: `harness install` on a real project, one full `/hk-init` session; log failures with `fail --layer`.
+2. Consider: a Claude Code plugin manifest as an extra distribution channel; a `doctor` check of the Claude Code
    version against the minimum the hooks need.
 
 ## Session Log

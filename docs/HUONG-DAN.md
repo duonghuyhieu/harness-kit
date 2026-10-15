@@ -5,19 +5,32 @@ agent không tự tuyên bố "xong" được nữa, mà harness chạy lệnh v
 bộ kit thêm một lớp `.claude/` gồm subagent, lệnh `/hk-*`, hook và status line — tương tự claudekit nhưng tập trung
 vào kỷ luật harness engineering (WIP=1, pass-gate một chiều, maker–checker, clean state).
 
-## 1. Cài đặt
+## 1. Cài đặt — một lệnh, cài xong là chạy
 
-Yêu cầu: Python ≥ 3.10 (không cần cài thư viện nào). Node ≥ 18 chỉ cần nếu dùng `npx`.
+Mở terminal **trong thư mục dự án** và chạy **một** trong các lệnh sau. Lệnh sẽ tạo luôn thư mục `.claude/` (agents,
+skills `/hk-*`, hooks, status line, settings) cùng các tệp harness ngay trong dự án. Sau đó mở thư mục bằng Claude Code
+là dùng được — không cần chạy thêm gì.
 
 ```bash
-git clone https://github.com/duonghuyhieu/harness.git ~/harness-kit
-python ~/harness-kit/harness.py install /đường/dẫn/dự-án       # mọi hệ điều hành
-~/harness-kit/install.sh /đường/dẫn/dự-án                      # macOS / Linux / Git Bash
-.\harness-kit\install.ps1 D:\du-an                             # Windows PowerShell
-npx github:duonghuyhieu/harness install .                      # qua npm
+# Windows (PowerShell)
+irm https://raw.githubusercontent.com/duonghuyhieu/harness/main/install.ps1 | iex
+
+# macOS / Linux / Git Bash
+curl -fsSL https://raw.githubusercontent.com/duonghuyhieu/harness/main/install.sh | bash
+
+# npm (Node ≥ 18)
+npx github:duonghuyhieu/harness                  # cài vào thư mục hiện tại
+npm install -D github:duonghuyhieu/harness       # tự cài khi npm install (giống claudekit)
 ```
 
-Tùy chọn hay dùng:
+Yêu cầu duy nhất: có Python ≥ 3.10 trên PATH (không cần cài thư viện) — hook chạy bằng Python. Chạy lại đúng lệnh đó
+là cập nhật kit (tệp bạn đã sửa được giữ nguyên). `/hk-init` là **tùy chọn**: chạy một lần nếu muốn agent điền kiến
+thức dự án (AGENTS.md, docs/) và lập baseline verification; `/hk-help` liệt kê mọi lệnh.
+
+Cài vào thư mục khác hoặc từ bản clone: `python harness.py install D:\du-an` (hoặc `install.ps1 D:\du-an`,
+`install.sh /duong/dan`).
+
+Tùy chọn hay dùng (khi chạy `harness.py install`):
 
 | Tùy chọn | Ý nghĩa |
 |---|---|
@@ -33,8 +46,9 @@ bản của harness nằm ở `.harness/proposals/`. `<project>/.claude/settings
 status line của bạn được giữ). Mọi tệp harness cài vào `.claude/` được ghi vào manifest `<project>/.claude/harness-kit.json`
 kèm sha256, nên `update` và `uninstall` biết tệp nào bạn đã sửa.
 
-Sau khi cài: mở dự án trong Claude Code, gõ **`/hk-init`** để chạy giai đoạn khởi tạo (baseline H001–H006), hoặc
-**`/hk-help`** để xem bản đồ lệnh. Kiểm tra cài đặt: `harness doctor .`
+Sau khi cài: mở dự án trong Claude Code — hook, status line và các lệnh `/hk-*` hoạt động ngay. (Tùy chọn) gõ
+**`/hk-init`** để chạy giai đoạn khởi tạo (baseline H001–H006), **`/hk-help`** để xem bản đồ lệnh. Kiểm tra cài đặt:
+`python ~/.harness-kit/harness.py doctor .`
 
 ## 2. Quy trình làm việc hằng ngày
 

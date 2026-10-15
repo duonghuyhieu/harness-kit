@@ -13,23 +13,29 @@ The idea in one line: **the harness, not the agent, decides what is done.** A fe
 `scripts/harness.py verify <id>` runs its verification command and the project check; hooks deny hand edits of that
 state, keep one feature active at a time, and block finishing a turn with debug code or junk left behind.
 
-## Install
+## Install — one command, then it just works
 
-Requirements: Python ≥ 3.10 (no packages). Node ≥ 18 only if you use `npx`.
+Run **one** of these **inside your project folder**. It creates `.claude/` (agents, `/hk-*` skills, hooks, status
+line, settings) and the harness files right there. Then open the folder in Claude Code — that is all.
 
 ```bash
-# from a clone (any OS)
-git clone https://github.com/duonghuyhieu/harness.git ~/harness-kit
-python ~/harness-kit/harness.py install /path/to/project
+# Windows (PowerShell)
+irm https://raw.githubusercontent.com/duonghuyhieu/harness/main/install.ps1 | iex
 
-# or the wrappers
-~/harness-kit/install.sh /path/to/project          # macOS / Linux / Git Bash
-.\harness-kit\install.ps1 C:\path\to\project       # Windows PowerShell
-npx github:duonghuyhieu/harness install .          # npm (init is an alias of install)
-pip install -e ~/harness-kit && harness install .  # a `harness` command on PATH
+# macOS / Linux / Git Bash
+curl -fsSL https://raw.githubusercontent.com/duonghuyhieu/harness/main/install.sh | bash
+
+# npm (Node ≥ 18)
+npx github:duonghuyhieu/harness                  # installs into the current folder
+npm install -D github:duonghuyhieu/harness       # same, automatically on install (like claudekit)
 ```
 
-Then open the project in Claude Code and type **`/hk-init`** (initialization phase) or **`/hk-help`**.
+Requirement: Python ≥ 3.10 on PATH (no packages) — the hooks run on it. Re-running the same command updates the kit
+(files you changed are kept). `/hk-init` is optional: run it once if you want the agent to fill in `AGENTS.md`,
+`docs/` and the verification baseline for your project; `/hk-help` lists every command.
+
+From a clone, any target folder: `python harness.py install /path/to/project` (or `install.sh` / `install.ps1` with a
+path, or `pip install -e .` for a `harness` command on PATH).
 
 `install` never overwrites your files: an existing `AGENTS.md`, `CLAUDE.md` or feature list is kept and the
 harness version goes to `.harness/proposals/`. An existing `.claude/settings.json` is merged entry by entry (your

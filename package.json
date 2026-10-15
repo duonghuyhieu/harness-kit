@@ -15,7 +15,8 @@
     "docs/HUONG-DAN.md"
   ],
   "scripts": {
-    "test": "python -m unittest discover -s tests -t . -q"
+    "test": "python -m unittest discover -s tests -t . -q",
+    "postinstall": "node bin/postinstall.js"
   },
   "keywords": ["claude-code", "harness-engineering", "coding-agents", "agents-md", "hooks", "skills"],
   "author": "Duong Huy Hieu",

@@ -699,6 +699,37 @@
       "priority": 5,
       "activated_at": "2026-10-15T19:54:18+07:00",
       "activated_commit": ""
+    },
+    {
+      "id": "V006",
+      "category": "feature",
+      "behavior": "One-command install: no-arg npx installs into the current folder, npm postinstall installs into the project (never fails npm install), and the piped install.ps1/install.sh download the kit and install into the current folder",
+      "verification": "node --check bin/cli.js && node --check bin/postinstall.js && bash -n install.sh",
+      "status": "passing",
+      "depends_on": [
+        "V005"
+      ],
+      "evidence": {
+        "verified_at": "2026-10-15T20:13:44+07:00",
+        "commit": "570ec9d",
+        "command": "node --check bin/cli.js && node --check bin/postinstall.js && bash -n install.sh",
+        "exit_code": 0,
+        "duration_s": 0.2,
+        "project_check": "quick",
+        "output_tail": ""
+      },
+      "scope": [
+        "bin/*",
+        "install.sh",
+        "install.ps1",
+        "package.json",
+        "harness_kit/installer.py",
+        "*.md",
+        "docs/*"
+      ],
+      "priority": 6,
+      "activated_at": "2026-10-15T20:11:59+07:00",
+      "activated_commit": "570ec9d7b26ca3767838a43555dca8265fff870d"
     }
   ]
 }

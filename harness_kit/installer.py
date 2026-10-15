@@ -12,6 +12,7 @@
 from __future__ import annotations
 
 import json
+import re
 import os
 import shutil
 import subprocess
@@ -37,11 +38,31 @@ def install(root: Path, level: str = "standard", python: str | None = None, stat
     py = _python(python)
     out = scaffold.retrofit(root, level=level, dry_run=dry_run, git_init=git_init, commit=commit, claude=True,
                             python=py, statusline=statusline, force=force)
+    out = _condense(out.split("\n\nNext steps:")[0])
     if dry_run:
         return out
-    return out + (f"\n\nharness-kit {VERSION} installed for Claude Code (hooks run with `{py}`).\n"
-                  f"  Open the project in Claude Code and type /hk-init (initialization) or /hk-help.\n"
-                  f"  Check the installation any time: harness doctor \"{root}\"")
+    return out + (f"\n\nDONE — harness-kit {VERSION} is installed and active in {root}\n"
+                  f"  Just open this folder in Claude Code: the hooks, the status line and the /hk-* commands work "
+                  f"right away (hooks run with `{py}`).\n"
+                  f"  Optional: type /hk-init once to fill in the project knowledge (AGENTS.md, docs/) and the "
+                  f"verification baseline; /hk-help shows every command.\n"
+                  f"  Health check any time: harness doctor \"{root}\"")
+
+
+def _condense(summary: str) -> str:
+    """One line per payload folder instead of one per skill/agent file."""
+    out, seen = [], set()
+    for line in summary.splitlines():
+        m = re.match(r"^(\s+[+>~=] )\.claude/(skills|agents)/", line)
+        if m:
+            key = (m.group(1), m.group(2))
+            if key not in seen:
+                seen.add(key)
+                n = sum(1 for l in summary.splitlines() if l.startswith(f"{m.group(1)}.claude/{m.group(2)}/"))
+                out.append(f"{m.group(1)}.claude/{m.group(2)}/ ({n} files)")
+            continue
+        out.append(line)
+    return "\n".join(out)
 
 
 def update(root: Path, python: str | None = None, statusline: bool = True, force: bool = False,
