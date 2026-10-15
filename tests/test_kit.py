@@ -963,6 +963,17 @@ class LoopTests(unittest.TestCase):
         self.assertEqual((self.root / ".harness/loop/.gitignore").read_text(encoding="utf-8"), "*\n")
         self.assertIn("review the diff", out.lower())
 
+    def test_state_written_by_v2_hooks_is_not_an_integrity_violation(self):
+        """Found building harness-tutorial (2026-10-15): the project's own v2 hooks run inside loop sessions and write
+        activity/hook-state/compact-snapshot files; that is the runtime's own state, not the maker editing the harness."""
+        hooks_write = {".harness/activity.jsonl": '{"tool": "Write"}\n', ".harness/hook-state.json": "{}",
+                       ".harness/compact-snapshot.md": "snapshot\n"}
+        maker = {**MAKER_OK, "write": {**MAKER_OK["write"], **hooks_write}}
+        code, out = self.loop({"maker": [maker], "reviewer": [REVIEW_PASS]})
+        self.assertEqual(code, 0, out)
+        self.assertEqual(self.feature()["status"], "passing")
+        self.assertNotIn("INTEGRITY", out)
+
     def test_reviewer_feedback_reaches_next_maker_round(self):
         code, out = self.loop({"maker": [MAKER_OK], "reviewer": [REVIEW_FAIL, REVIEW_PASS]})
         self.assertEqual(code, 0, out)

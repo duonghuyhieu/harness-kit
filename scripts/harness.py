@@ -1038,8 +1038,10 @@ PROTECTED = ["feature_list.json", ".harness/*", "scripts/harness.py", ".claude/*
 # .claude/ are restored too, see _guarded_files)
 INTEGRITY_FILES = [".harness/config.json", ".harness/rules.json", "scripts/harness.py", "AGENTS.md", "CLAUDE.md",
                    "CLAUDE.local.md", ".mcp.json", "docs/harness/evaluator-rubric.md", ".claude/settings.json"]
-# written by the runtime itself while agents run `check`/`try`
-LOOP_RUNTIME_STATE = {".harness/trace.jsonl", ".harness/last-check.json", ".harness/session.json"}
+# written by the runtime itself while agents run `check`/`try`, and by the project's own v2 Claude Code hooks, which
+# also run inside loop sessions (found building harness-tutorial, 2026-10-15)
+LOOP_RUNTIME_STATE = {".harness/trace.jsonl", ".harness/last-check.json", ".harness/session.json",
+                      ".harness/activity.jsonl", ".harness/hook-state.json", ".harness/compact-snapshot.md"}
 DENIED_COMMANDS = [
     (r"harness\.py\s+(verify|next|block|unblock|add|fail|loop|upgrade)\b",
      "feature state changes only through the harness loop"),
