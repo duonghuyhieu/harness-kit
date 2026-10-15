@@ -27,7 +27,7 @@ curl -fsSL https://raw.githubusercontent.com/duonghuyhieu/harness-kit/main/insta
 
 # npm (Node ≥ 18)
 npx github:duonghuyhieu/harness-kit                  # installs into the current folder
-npm install -D github:duonghuyhieu/harness-kit       # same, automatically on install (like claudekit)
+npm install -D github:duonghuyhieu/harness-kit       # same, on the first `npm install` only (skipped in CI)
 ```
 
 Requirement: Python ≥ 3.10 on PATH (no packages) — the hooks run on it. Re-running the same command updates the kit
@@ -37,15 +37,22 @@ Requirement: Python ≥ 3.10 on PATH (no packages) — the hooks run on it. Re-r
 From a clone, any target folder: `python harness.py install /path/to/project` (or `install.sh` / `install.ps1` with a
 path, or `pip install -e .` for a `harness` command on PATH).
 
+In a new project the feature list starts with the harness baseline (H001…: real setup/test commands, a first test);
+`next` picks those first. To start on your own feature right away: `python scripts/harness.py next --id F012`.
+
 `install` never overwrites your files: an existing `AGENTS.md`, `CLAUDE.md` or feature list is kept and the
 harness version goes to `.harness/proposals/`. An existing `.claude/settings.json` is merged entry by entry (your
 hooks, permissions and status line are kept). Options: `--level minimal|standard|full`, `--no-statusline`,
 `--python "py -3"`, `--dry-run`, `--git-init`, `--commit`, `--global` (skills and agents into `~/.claude` only).
 
+`harness` below means the kit CLI: `python ~/.harness-kit/harness.py` after a one-line install (PowerShell:
+`python "$HOME\.harness-kit\harness.py"`), `npx github:duonghuyhieu/harness-kit <command>`, `python harness.py` in a
+clone, or `harness` after `pip install -e .`. The install prints the exact health-check command for your machine.
+
 | Command | What it does |
 |---|---|
 | `harness install [path]` | project harness files + Claude Code layer + manifest (`.claude/harness-kit.json`, sha256 per file) |
-| `harness update [path]` | refresh the `.claude/` layer and `scripts/harness.py`; files you changed are kept, the new version is proposed |
+| `harness update [path]` | refresh the `.claude/` layer and `scripts/harness.py`; files you changed are kept, the new version is proposed (re-running `install` does the same) |
 | `harness uninstall [path]` | remove unchanged harness files from `.claude/` and the harness entries in `settings.json` |
 | `harness doctor [path]` | read-only health check: manifest, runtime, settings, hooks registered, Python, smoke runs |
 | `harness audit [path]` | score the 5 subsystems (instructions, tools, environment, state, feedback) |
@@ -85,14 +92,17 @@ scripts/harness.py      the runtime (Python stdlib only)
 |---|---|
 | SessionStart | injects the harness state (features, VCR, active feature + verification, next steps, last check); after compaction also the pre-compaction snapshot |
 | UserPromptSubmit | one reminder line while a feature is active (deduplicated) |
-| PreToolUse | **denies** hand edits of `status`/`evidence` in the feature list and of harness state files; **asks** before writing outside the active feature's scope (`scope_guard` in `.harness/config.json`); never answers "allow" |
+| PreToolUse | **denies** hand edits of `status`/`evidence` in the feature list, of how a started feature is judged (`verification`, `scope`, `activated_commit`), duplicate ids and harness state files; **asks** before writing outside the active feature's scope (`scope_guard` in `.harness/config.json`) and before edits of the harness's own configuration (`.harness/config.json`, `.claude/settings.json`, the dispatcher); never answers "allow" |
 | PostToolUse | appends what the session touched to `.harness/activity.jsonl` |
 | PreCompact | writes `.harness/compact-snapshot.md` |
 | Stop | blocks finishing while debug code, junk files or a hand-edited feature list remain (never twice in a row) |
 | SessionEnd | records whether the session ended with a handoff |
 
 Hooks are cheap guardrails, not the gate: if Python or the runtime is missing they fail open (exit 0) with a note.
-The real gates are `verify` and `exit-check`; secrets are protected by `permissions.deny`. Disable hooks for one
+The real gates are `verify` and `exit-check`; secrets are protected by `permissions.deny`. The permission allow
+list covers runtime commands that only read or change state by the runtime's rules (`start`, `status`, `next`, `add`,
+`handoff`, `check`, `exit-check`…); `try`, `verify`, `setup` and `loop` run a command taken from an editable file, so
+Claude Code asks before running them. Disable hooks for one
 session with `HARNESS_HOOKS=off`. For filesystem and network isolation, also turn on Claude Code's own sandboxing:
 the harness does not replace an OS-level sandbox.
 
@@ -105,7 +115,7 @@ the harness does not replace an OS-level sandbox.
 ## Development
 
 ```bash
-python -m unittest discover -s tests -t . -q     # 97 tests
+python -m unittest discover -s tests -t . -q     # 105 tests
 python scripts/harness.py check                  # this repository runs under its own harness
 ```
 

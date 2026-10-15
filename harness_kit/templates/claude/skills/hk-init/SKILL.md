@@ -7,7 +7,7 @@ description: Initialization phase after `harness install` — make the project r
 
 The installer already generated the harness files. The part that needs judgment is yours: real commands, knowledge
 that lives only in people's heads, and a baseline that proves the project works. Kit tools (optional):
-`python "{{KIT_ROOT}}/harness.py"` — skip the kit steps if that path does not exist on this machine.
+the kit CLI (`npx github:duonghuyhieu/harness-kit <command>`, or `python ~/.harness-kit/harness.py <command>` after the one-line installer) — skip the kit steps if neither is available.
 
 ## Rules
 - This phase does not change product behavior. Only harness files, command config, docs and tests.
@@ -18,7 +18,7 @@ that lives only in people's heads, and a baseline that proves the project works.
 
 ## Steps
 0. **Safety and measure.** `git status` — a dirty tree → ask the user first; suggest a branch `harness/setup`.
-   Kit available → `python "{{KIT_ROOT}}/harness.py" audit . --out .harness-audit-before.md` and report the score and
+   Kit available → `<kit CLI> audit . --out .harness-audit-before.md` and report the score and
    the bottleneck subsystem.
 1. **H001 baseline.** `python scripts/harness.py next`. Make `.harness/config.json → commands` match reality (CI
    config, README, package scripts, Makefile); fix the config, not the code. `python scripts/harness.py setup`, then

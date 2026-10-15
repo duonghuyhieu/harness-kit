@@ -35,18 +35,48 @@ def install(root: Path, level: str = "standard", python: str | None = None, stat
     root = root.resolve()
     if not root.is_dir():
         raise SystemExit(f"ERROR: {root} is not a directory.")
+    manifest = scaffold._read_manifest(root)
+    if manifest:  # installed before: re-running the install command is the documented way to update
+        py = python or manifest.get("python") or _python(None)
+        out = update(root, python=py, statusline=statusline, force=force, dry_run=dry_run)
+        return out if dry_run else out + _done(root, py, verb="updated")
     py = _python(python)
     out = scaffold.retrofit(root, level=level, dry_run=dry_run, git_init=git_init, commit=commit, claude=True,
                             python=py, statusline=statusline, force=force)
     out = _condense(out.split("\n\nNext steps:")[0])
     if dry_run:
         return out
-    return out + (f"\n\nDONE — harness-kit {VERSION} is installed and active in {root}\n"
-                  f"  Just open this folder in Claude Code: the hooks, the status line and the /hk-* commands work "
-                  f"right away (hooks run with `{py}`).\n"
-                  f"  Optional: type /hk-init once to fill in the project knowledge (AGENTS.md, docs/) and the "
-                  f"verification baseline; /hk-help shows every command.\n"
-                  f"  Health check any time: {py} \"{(scaffold.KIT_ROOT / 'harness.py').as_posix()}\" doctor \"{root}\"")
+    return out + _done(root, py, verb="installed")
+
+
+def kit_command(sub: str, root: Path, py: str = "python") -> str:
+    """How to run a kit command on this machine (from the kit folder the install ran from)."""
+    return f"{py} \"{(scaffold.KIT_ROOT / 'harness.py').as_posix()}\" {sub} \"{root.as_posix()}\""
+
+
+def _read_settings(root: Path):
+    try:
+        return json.loads((root / ".claude" / "settings.json").read_text(encoding="utf-8-sig"))
+    except (OSError, ValueError):
+        return None
+
+
+def _done(root: Path, py: str, verb: str) -> str:
+    settings = _read_settings(root)
+    ours = isinstance(settings, dict) and scaffold._is_harness_statusline(settings.get("statusLine"))
+    parts = "the hooks, the status line and the /hk-* commands" if ours else \
+        "the hooks and the /hk-* commands (your own status line was kept)"
+    out = (f"\n\nDONE — harness-kit {VERSION} is {verb} and active in {root}\n"
+           f"  Just open this folder in Claude Code: {parts} work right away (hooks run with `{py}`).\n"
+           f"  Optional: type /hk-init once to fill in the project knowledge (AGENTS.md, docs/) and the "
+           f"verification baseline; /hk-help shows every command.\n"
+           f"  Health check any time: {kit_command('doctor', root, py)}\n"
+           f"  Update later: run the same install command again.")
+    claude_md = root / "CLAUDE.md"
+    if claude_md.is_file() and not scaffold.imports_agents_md(claude_md):
+        out += ("\n  NOTE: your CLAUDE.md does not import AGENTS.md, so Claude Code does not see the harness rules: "
+                "add the line `@AGENTS.md` at the top of CLAUDE.md.")
+    return out
 
 
 def _condense(summary: str) -> str:
@@ -71,7 +101,7 @@ def update(root: Path, python: str | None = None, statusline: bool = True, force
     root = root.resolve()
     manifest = scaffold._read_manifest(root)
     if not manifest:
-        raise SystemExit(f"ERROR: no {scaffold.MANIFEST} in {root}.\nFIX: run `harness install {root}` first.")
+        raise SystemExit(f"ERROR: no {scaffold.MANIFEST} in {root}.\nFIX: install first: {kit_command('install', root)}")
     py = python or manifest.get("python") or _python(None)
     plan = scaffold.Plan(root)
     plan.force = force
@@ -83,6 +113,14 @@ def update(root: Path, python: str | None = None, statusline: bool = True, force
         return plan.summary(dry_run=True)
     plan.apply()
     return plan.summary(dry_run=False) + f"\n\nUpdated harness-kit {manifest.get('version')} -> {VERSION}."
+
+
+def _has_harness_hooks(settings: dict) -> bool:
+    hooks = settings.get("hooks") if isinstance(settings, dict) else None
+    if not isinstance(hooks, dict):
+        return False
+    return any(scaffold._is_harness_hook(h) for entries in hooks.values() if isinstance(entries, list)
+               for e in entries if isinstance(e, dict) and isinstance(e.get("hooks"), list) for h in e["hooks"])
 
 
 def _unchanged(p: Path, sha: str) -> bool:
@@ -112,6 +150,12 @@ def uninstall(root: Path, dry_run: bool = False) -> str:
             lines.append("! .claude/settings.json is not valid JSON: left untouched; remove the harness hooks by hand.")
         if isinstance(current, dict):
             new_settings = scaffold.strip_claude_settings(current, manifest.get("settings_added", {}))
+    dispatcher = ".claude/hooks/harness_hook.py"
+    if dispatcher in removed and settings_p.is_file() and (new_settings is None or _has_harness_hooks(new_settings)):
+        # hooks that still point at the dispatcher would fail (exit 2 blocks every prompt): keep it until they are gone
+        removed.remove(dispatcher)
+        lines.append(f"! Kept {dispatcher}: .claude/settings.json still registers harness hooks. Remove them, then "
+                     f"delete the file.")
     if dry_run:
         lines = [f"Would remove {len(removed)} unchanged harness file(s):"] + [f"  - {r}" for r in removed] + lines
     else:
@@ -166,12 +210,12 @@ def install_global(dest: Path | None = None, dry_run: bool = False) -> str:
     out = [f"{'Would install' if dry_run else 'Installed'} {len(written)} file(s) into {dest} (skills, agents, output style)."]
     if kept:
         out.append(f"Kept {len(kept)} file(s) you changed: " + ", ".join(kept))
-    out.append("Hooks and the status line are per project: run `harness install <project>` to add them.")
+    out.append("Hooks and the status line are per project: run the install command inside each project.")
     return "\n".join(out)
 
 
 def _run(cmd: list[str], cwd: Path, payload: dict) -> tuple[int, str]:
-    env = {**os.environ, "CLAUDE_PROJECT_DIR": str(cwd)}
+    env = {**os.environ, "CLAUDE_PROJECT_DIR": str(cwd), "HARNESS_NO_TRACE": "1"}
     try:
         proc = subprocess.run(cmd, cwd=cwd, input=json.dumps(payload), capture_output=True, text=True,
                               encoding="utf-8", errors="replace", timeout=60, env=env)
@@ -190,11 +234,11 @@ def doctor(root: Path) -> tuple[int, str]:
 
     manifest = scaffold._read_manifest(root)
     if not manifest:
-        add("FAIL", "manifest", f"{scaffold.MANIFEST} missing — run `harness install`")
+        add("FAIL", "manifest", f"{scaffold.MANIFEST} missing — install: {kit_command('install', root)}")
     else:
         add("OK" if manifest.get("version") == VERSION else "WARN", "kit version",
             f"installed {manifest.get('version')}, kit {VERSION}" + ("" if manifest.get("version") == VERSION
-                                                                       else " — run `harness update`"))
+                                                                       else " — re-run the install command"))
         files = manifest.get("files", {})
         missing = [r for r in files if not (root / r).exists()]
         changed = [r for r, sha in files.items() if (root / r).exists() and scaffold._sha_file(root / r) != sha]
@@ -209,7 +253,7 @@ def doctor(root: Path) -> tuple[int, str]:
     if rt.is_file():
         same = rt.read_text(encoding="utf-8") == (Path(__file__).parent / "runtime.py").read_text(encoding="utf-8")
         add("OK" if same else "WARN", "runtime", "scripts/harness.py " + ("matches the kit" if same else
-                                                                          "differs from the kit — run `harness update`"))
+                                                                          "differs from the kit — re-run the install command"))
     else:
         add("FAIL", "runtime", "scripts/harness.py missing")
     settings_p = root / ".claude" / "settings.json"
@@ -231,6 +275,16 @@ def doctor(root: Path) -> tuple[int, str]:
         deny = settings.get("permissions", {}).get("deny", []) if isinstance(settings.get("permissions"), dict) else []
         add("OK" if "Read(./.env)" in deny else "WARN", "secret protection",
             "Read(./.env) denied" if "Read(./.env)" in deny else "no deny rule for .env")
+    claude_md = root / "CLAUDE.md"
+    if claude_md.is_file():
+        ok = scaffold.imports_agents_md(claude_md)
+        add("OK" if ok else "WARN", "CLAUDE.md", "imports AGENTS.md" if ok else
+            "does not import AGENTS.md: Claude Code never sees the harness rules — add `@AGENTS.md` at the top")
+    agents_md = root / "AGENTS.md"
+    if agents_md.is_file():
+        ok = "scripts/harness.py" in agents_md.read_text(encoding="utf-8", errors="replace")
+        add("OK" if ok else "WARN", "AGENTS.md", "routes to the harness runtime" if ok else
+            "has no harness instructions: merge .harness/proposals/AGENTS.md into it")
     dispatcher = root / ".claude" / "hooks" / "harness_hook.py"
     if dispatcher.is_file() and exe:
         cmd = [sys.executable, str(dispatcher)]

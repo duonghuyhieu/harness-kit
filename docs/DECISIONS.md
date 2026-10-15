@@ -114,3 +114,18 @@
 ## 2026-10-07: Stop hook does only cheap checks
 - Reason: Stop fires at the end of every assistant turn; running tests there would make every turn slow.
 - Consequence: tests/build are enforced by `verify` and `exit-check`, not the hook.
+
+## 2026-10-15 — 2.0.1: fixes from three independent reviews (code, end-to-end install, docs)
+
+- Harness hooks are recognized by the dispatcher path after any launcher (`py`, `py -3.12`, `uv run python`…):
+  before, `--python py` hooks were duplicated on update and left behind on uninstall, pointing at a deleted dispatcher
+  (exit 2 blocks every prompt). Uninstall now keeps the dispatcher while any harness hook is still registered.
+- Hook stdin is decoded as UTF-8 from bytes (Windows used the ANSI code page: the guard missed non-ASCII paths).
+- The pass-gate is closed against its own inputs: `verification`, `verify_check`, `scope`, `cwd`, `activated_commit`
+  of an active or passing feature are locked; duplicate ids are denied; a broken feature list can be repaired.
+- The permission allow list no longer covers `harness.py *`: `try`, `verify`, `setup`, `loop` run commands from
+  agent-editable files and go through the normal prompt. Edits of the harness configuration are guarded with `ask`.
+- `install` never replaces a `scripts/harness.py` that lacks the harness-kit header; re-running `install` on an
+  installed project is an `update` (no proposals for identical files, no bogus legacy note, manifest untouched when
+  nothing changed, no machine-specific kit path in committed files); postinstall runs only the first time and never
+  in CI. install.ps1 runs in a script block and survives a Python probe that writes to stderr.

@@ -48,7 +48,10 @@ kèm sha256, nên `update` và `uninstall` biết tệp nào bạn đã sửa.
 
 Sau khi cài: mở dự án trong Claude Code — hook, status line và các lệnh `/hk-*` hoạt động ngay. (Tùy chọn) gõ
 **`/hk-init`** để chạy giai đoạn khởi tạo (baseline H001–H006), **`/hk-help`** để xem bản đồ lệnh. Kiểm tra cài đặt:
-`python ~/.harness-kit/harness.py doctor .`
+`python ~/.harness-kit/harness.py doctor .` (macOS/Linux/Git Bash) · `python "$HOME\.harness-kit\harness.py" doctor .` (PowerShell) · `npx github:duonghuyhieu/harness-kit doctor` (npm). Lệnh in ở dòng "Health check any time" sau khi cài là lệnh đúng cho máy của bạn.
+
+Trong dự án mới, feature list có sẵn các feature nền của harness (H001…): làm cho lệnh setup/test chạy được, viết
+test đầu tiên… `next` sẽ chọn chúng trước; muốn làm feature của mình ngay thì dùng `next --id F012`.
 
 ## 2. Quy trình làm việc hằng ngày
 
@@ -78,7 +81,7 @@ Ba quy tắc cốt lõi:
 |---|---|
 | SessionStart | tiêm trạng thái: số feature, VCR, feature active + lệnh verify, bước tiếp, lần check gần nhất; sau compaction tiêm thêm snapshot |
 | UserPromptSubmit | nhắc 1 dòng khi có feature active (chống lặp 10 phút) |
-| PreToolUse | **chặn** sửa tay trạng thái harness; **hỏi** trước khi ghi ngoài scope của feature active; không bao giờ tự "allow" |
+| PreToolUse | **chặn** sửa tay trạng thái harness, sửa cách chấm của feature đã bắt đầu (`verification`, `scope`, `activated_commit`) và id trùng; **hỏi** trước khi ghi ngoài scope của feature active và trước khi sửa cấu hình của chính harness (`<project>/.harness/config.json`, `<project>/.claude/settings.json`); không bao giờ tự "allow" |
 | PostToolUse | ghi lại tệp/lệnh phiên đã chạm vào `.harness/activity.jsonl` |
 | PreCompact | ghi `<project>/.harness/compact-snapshot.md` trước khi nén ngữ cảnh |
 | Stop | chặn kết thúc lượt khi còn debug code, file rác, feature list bị sửa tay (không chặn hai lần liên tiếp) |
@@ -91,11 +94,15 @@ cô lập filesystem và mạng — harness không thay thế sandbox cấp hệ
 
 ## 4. Cập nhật và gỡ cài
 
+Cập nhật: **chạy lại đúng lệnh cài đặt** (khi dự án đã có manifest, lệnh cài hoạt động như `update`). Các lệnh còn
+lại gọi CLI của kit — `python ~/.harness-kit/harness.py` (macOS/Linux/Git Bash), `python "$HOME\.harness-kit\harness.py"`
+(PowerShell), hoặc `npx github:duonghuyhieu/harness-kit` (npm):
+
 ```bash
-harness update .        # làm mới .claude/ + scripts/harness.py; tệp bạn đã sửa được giữ, bản mới vào .harness/proposals/
-harness update . --force   # ghi đè cả tệp harness bạn đã sửa
-harness uninstall .     # gỡ các tệp harness chưa bị sửa trong .claude/ và các mục harness trong settings.json
-harness doctor .        # kiểm tra sức khỏe cài đặt (chỉ đọc)
+python ~/.harness-kit/harness.py update .          # làm mới .claude/ + scripts/harness.py; tệp bạn đã sửa được giữ, bản mới vào .harness/proposals/
+python ~/.harness-kit/harness.py update . --force  # ghi đè cả tệp harness bạn đã sửa
+python ~/.harness-kit/harness.py uninstall .       # gỡ các tệp harness chưa bị sửa trong .claude/ và các mục harness trong settings.json
+python ~/.harness-kit/harness.py doctor .          # kiểm tra sức khỏe cài đặt (chỉ đọc)
 ```
 
 `uninstall` không xóa `AGENTS.md`, `PROGRESS.md`, `feature_list.json`, `docs/`… vì đó đã là nội dung của dự án.
@@ -104,7 +111,9 @@ harness doctor .        # kiểm tra sức khỏe cài đặt (chỉ đọc)
 
 | Triệu chứng | Cách xử lý |
 |---|---|
-| Hook không chạy | `harness doctor .` — xem dòng "python for hooks" và "hooks registered"; cài lại với `--python "<lệnh>"` |
+| Hook không chạy | chạy doctor (mục 1) — xem dòng "python for hooks" và "hooks registered"; cài lại với `--python "<lệnh>"` |
+| Claude Code hỏi trước `try`/`verify` | đúng thiết kế: hai lệnh này chạy lệnh verification lấy từ tệp agent sửa được; muốn tự duyệt thì tự thêm luật allow |
+| doctor báo CLAUDE.md không import AGENTS.md | thêm dòng `@AGENTS.md` lên đầu CLAUDE.md của bạn, nếu không Claude Code không thấy luật harness |
 | Claude Code báo "workspace has not been trusted" | mở dự án một lần ở chế độ tương tác và chấp nhận hộp thoại trust (permission allow mới có hiệu lực) |
 | Bị hỏi khi ghi ngoài scope | đúng thiết kế: thêm tệp vào `--scope` của feature, hoặc ghi nhận thành feature mới; hoặc `scope_guard: "off"` |
 | Stop hook chặn kết thúc | đọc danh sách lỗi (debug code, file rác…), sửa rồi chạy `python scripts/harness.py exit-check` |

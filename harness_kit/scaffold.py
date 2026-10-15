@@ -337,11 +337,21 @@ def hook_command(python: str, event: str) -> str:
     return f'{python} "${{CLAUDE_PROJECT_DIR}}/.claude/hooks/harness_hook.py" {event}'
 
 
+# Runtime subcommands that only read state or change it through the runtime's own rules. `try`, `verify`, `setup` and
+# `loop` run a command taken from feature_list.json / .harness/config.json, which an agent can edit: they are left to
+# the normal permission prompt, so an agent-written command never runs unseen. (`start`, `check`, `exit-check` run the
+# configured project commands; edits of .harness/config.json are guarded with "ask".)
+SAFE_RUNTIME_COMMANDS = ("start", "status", "next", "add", "block", "unblock", "handoff", "check", "exit-check",
+                         "validate", "docs", "rules", "trace", "report", "failures", "fail", "size")
+
+
 def make_claude_settings(inv: dict, python: str = "python", statusline: bool = True) -> dict:
     """Least-privilege permissions (lesson 02) + the v2 hooks (state injection, guard, activity, compaction snapshot,
     clean-state Stop gate) + a status line. Every hook goes through the fail-open dispatcher."""
-    allow = ["Bash(python scripts/harness.py *)", "Bash(python3 scripts/harness.py *)", "Bash(py -3 scripts/harness.py *)",
-             "Bash(./init.sh)", "Bash(git status *)", "Bash(git diff *)", "Bash(git log *)"]
+    launchers = dict.fromkeys(("python", "python3", python))  # what agents type, plus the hooks' interpreter
+    allow = [f"Bash({py} scripts/harness.py {sub}{rest})" for py in launchers
+             for sub in SAFE_RUNTIME_COMMANDS for rest in ("", " *")]
+    allow += ["Bash(./init.sh)", "Bash(git status *)", "Bash(git diff *)", "Bash(git log *)"]
     for key in ("test", "lint", "typecheck", "build", "e2e"):
         for step in inv["commands"].get(key, []):
             cmd = step["cmd"].split("  #")[0].strip()
@@ -435,6 +445,9 @@ class Plan:
 
     def add(self, rel: str, content: str, propose_if_exists: bool = True) -> None:
         if (self.root / rel).exists():
+            p = self.root / rel
+            if p.is_file() and _sha_file(p) == _sha(content):
+                return  # already what we would write: no proposal, no noise
             if propose_if_exists:
                 self.proposals.append((rel, content))
             else:
@@ -464,9 +477,15 @@ class Plan:
             p = self.root / rel
             if p.is_file():
                 files[rel] = sha if _sha_file(p) == sha else old.get(rel, sha)
-        data = {**self.manifest, "kit": "harness-kit", "version": VERSION, "kit_root": KIT_ROOT.as_posix(),
-                "updated_at": _dt.datetime.now().astimezone().isoformat(timespec="seconds"), "files": files,
+        # no machine-specific kit path: the manifest is committed and shared by the team
+        old_data = {k: v for k, v in self.manifest.items() if k != "kit_root"}
+        data = {**old_data, "kit": "harness-kit", "version": VERSION, "files": files,
                 "settings_added": self.settings_added, **extra}
+        volatile = ("updated_at", "installed_at", "previous_version")
+        if self.manifest and {k: v for k, v in data.items() if k not in volatile} == \
+                {k: v for k, v in old_data.items() if k not in volatile}:
+            return  # nothing changed: leave the file (and the git tree) alone
+        data["updated_at"] = _dt.datetime.now().astimezone().isoformat(timespec="seconds")
         data.setdefault("installed_at", data["updated_at"])
         _write(self.root / MANIFEST, _as_json(data))
 
@@ -582,8 +601,10 @@ def claude_payload(python: str = "python") -> list[tuple[str, str]]:
 def plan_claude_layer(plan: "Plan", inv: dict, python: str = "python", statusline: bool = True) -> None:
     """Agents, skills, hook dispatcher and output style under .claude/, the merged settings, the removal of unchanged
     v1 items and of files dropped from the kit since the last install."""
-    for rel, content in claude_payload(python):
+    payload = claude_payload(python)
+    for rel, content in payload:
         plan.add_harness_item(rel, content)
+    still_shipped = {rel for rel, _ in payload}  # a blocked item is still part of the kit: never "dropped"
     for rel, sha in LEGACY_ITEMS.items():
         p = plan.root / rel
         if p.is_file() and not _is_link(p):
@@ -594,7 +615,7 @@ def plan_claude_layer(plan: "Plan", inv: dict, python: str = "python", statuslin
                 plan.notes.append(f"{rel} is a v1 harness item you changed: kept; v2 uses hk-reviewer / hk-optimize.")
     for rel, sha in plan.manifest.get("files", {}).items():
         p = plan.root / rel
-        if rel not in plan.payload and p.is_file():
+        if rel not in still_shipped and p.is_file():
             if _sha_file(p) == sha:
                 plan.delete.append(rel)
                 plan.notes.append(f"Removed {rel}: no longer part of harness-kit {VERSION}.")
@@ -663,12 +684,14 @@ def _plan_feature_list(plan: Plan, inv: dict, legacy_entry: list[str], feature_f
         plan.add(feature_file, content)
 
 
-# Exactly the harness's own hook commands — v1's Stop hook and v2's dispatcher, with any Python launcher — never a
-# user command that merely mentions harness.py or hook-stop.
-_PY = r'(python3?|py\s+-3|"[^"]*python[^"]*"|\S*python3?(\.exe)?)'
-_DIR = r'(\$\{CLAUDE_PROJECT_DIR\}/|\$CLAUDE_PROJECT_DIR/)?'
-HARNESS_STOP_RE = re.compile(rf'^{_PY}\s+"?{_DIR}(scripts/harness\.py"?\s+hook-stop|\.claude/hooks/harness_hook\.py"?\s+stop)\s*$')
-HARNESS_HOOK_RE = re.compile(rf'^{_PY}\s+"?{_DIR}(scripts/harness\.py"?\s+hook-stop|\.claude/hooks/harness_hook\.py"?\s+[a-z-]+)\s*$')
+# Exactly the harness's own hook commands — v1's Stop hook and v2's dispatcher — recognized by what they run, after
+# any launcher (python, py -3.12, python3.12, uv run python, /usr/bin/env python3, VAR=1 python, a quoted path), never
+# a user command that merely mentions harness.py or hook-stop. A launcher may not contain shell operators, so
+# `mine && python scripts/harness.py hook-stop` stays the user's.
+_PY = r'[^;&|<>`]*?[\s"]'
+_DIR = r'(\$\{CLAUDE_PROJECT_DIR\}/|\$CLAUDE_PROJECT_DIR/|\./)?'
+HARNESS_STOP_RE = re.compile(rf'^{_PY}"?{_DIR}(scripts/harness\.py"?\s+hook-stop|\.claude/hooks/harness_hook\.py"?\s+stop)\s*$')
+HARNESS_HOOK_RE = re.compile(rf'^{_PY}"?{_DIR}(scripts/harness\.py"?\s+hook-stop|\.claude/hooks/harness_hook\.py"?\s+[a-z-]+)\s*$')
 
 
 class _DuplicateKey(ValueError):
@@ -832,7 +855,7 @@ def _policy_notes(inv: dict, legacy_entry: list[str]) -> list[str]:
 
 
 HARNESS_GITIGNORE = ["trace.jsonl", "last-check.json", "session.json", "loop/", "runs/", "activity.jsonl",
-                     "hook-state.json", "compact-snapshot.md"]
+                     "activity.jsonl.tmp", "hook-state.json", "compact-snapshot.md", "proposals/"]
 
 
 def _plan_harness_gitignore(plan: "Plan") -> None:
@@ -854,11 +877,23 @@ def _plan_runtime(plan: "Plan", upgrade_runtime: bool) -> None:
     rel = "scripts/harness.py"
     content = (Path(__file__).parent / "runtime.py").read_text(encoding="utf-8")
     p = plan.root / rel
-    if upgrade_runtime and p.is_file() and not _is_link(p):
+    if upgrade_runtime and p.is_file() and not _is_link(p) and _is_kit_runtime(p):
         if p.read_bytes() != content.encode("utf-8"):
             plan.replace.append((rel, content))
     else:
+        if upgrade_runtime and p.is_file():
+            plan.notes.append(f"{rel} exists and is not the harness-kit runtime: kept; the hooks need the runtime — "
+                              f"move your file, then run install again (the runtime is in .harness/proposals/{rel}).")
         plan.add(rel, content)
+
+
+def _is_kit_runtime(p: Path) -> bool:
+    """A scripts/harness.py written by harness-kit (v1 or v2) carries this header; anything else is the user's file."""
+    try:
+        head = p.read_text(encoding="utf-8", errors="replace")[:400]
+    except OSError:
+        return False
+    return "File managed by harness-kit" in head
 
 
 def build_plan(root: Path, level: str = "standard", claude: bool = False, python: str = "python",
@@ -873,7 +908,8 @@ def build_plan(root: Path, level: str = "standard", claude: bool = False, python
     plan.manifest_extra = {"python": python, "level": level}
     progress_file = inv["progress_files"][0] if inv["progress_files"] else "PROGRESS.md"
     feature_file = "feature_list.json"
-    legacy_entry = [e for e in inv["entry_files"] if e != "AGENTS.md" or _line_count(root / e) > 200]
+    legacy_entry = [e for e in inv["entry_files"] if (e != "AGENTS.md" or _line_count(root / e) > 200)
+                    and not (e == "CLAUDE.md" and imports_agents_md(root / e))]
 
     _plan_templates(plan, inv, level, progress_file, claude)
     plan.add(".harness/config.json", _as_json(make_config(inv, progress_file, feature_file)))
@@ -886,6 +922,15 @@ def build_plan(root: Path, level: str = "standard", claude: bool = False, python
     _plan_gitattributes(plan)
     plan.notes += _policy_notes(inv, legacy_entry)
     return plan, inv
+
+
+def imports_agents_md(p: Path) -> bool:
+    """CLAUDE.md that imports AGENTS.md (`@AGENTS.md`, as the harness writes it) is a router, not legacy instructions."""
+    try:
+        text = p.read_text(encoding="utf-8", errors="replace")
+    except OSError:
+        return False
+    return any(line.strip().startswith("@AGENTS.md") for line in text.splitlines()[:20])
 
 
 def _line_count(p: Path) -> int:

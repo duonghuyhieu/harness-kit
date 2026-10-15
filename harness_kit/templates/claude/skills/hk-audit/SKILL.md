@@ -6,7 +6,7 @@ description: Score the harness of this project on its five subsystems (instructi
 # Harness audit
 
 1. Measure:
-   - Kit available: `python "{{KIT_ROOT}}/harness.py" audit .` (5 × 5 checks, Fresh Session Test, clean-state scan).
+   - Kit available: `<kit CLI> audit .` — the kit CLI (`npx github:duonghuyhieu/harness-kit <command>`, or `python ~/.harness-kit/harness.py <command>` after the one-line installer) (5 × 5 checks, Fresh Session Test, clean-state scan).
    - Always: `python scripts/harness.py status`, `python scripts/harness.py docs --strict`,
      `python scripts/harness.py failures` (the bottleneck by *observed* failures), `python scripts/harness.py report --list`.
 2. Fresh Session Test — answer from the repo alone, citing files: what is this system, how is it organized, how do I

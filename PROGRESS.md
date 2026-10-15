@@ -7,13 +7,13 @@
 
 ## Current State
 <!-- harness:auto:start -->
-_Auto-updated by `harness.py handoff` at 2026-10-15T20:13:55+07:00_
-- Branch / commit: `main` @ `570ec9d feat: harness-kit v2 — Claude Code layer installed into .claude/`
-- Last check: PASS (quick, 2026-10-15T20:13:44+07:00, @570ec9d)
-- Features: 25/25 passing, VCR 1.0
+_Auto-updated by `harness.py handoff` at 2026-10-15T21:53:08+07:00_
+- Branch / commit: `main` @ `d8d686d fix(runtime): unblock resets the activation base; loop drift uses HEAD for not-started features`
+- Last check: PASS (quick, 2026-10-15T21:52:59+07:00, @d8d686d)
+- Features: 26/26 passing, VCR 1.0
 - Active: none
 - Blocked: none
-- Uncommitted changes: 9 file(s)
+- Uncommitted changes: 17 file(s)
 <!-- harness:auto:end -->
 
 ## Done
@@ -34,6 +34,11 @@ _Auto-updated by `harness.py handoff` at 2026-10-15T20:13:55+07:00_
   - V001–V005 registered and passed through `verify` (24/24 passing, VCR 1.0); `exit-check`: CLEAN STATE
   - V006 one-command install (user request: "install once and it just works"): piped `install.ps1`/`install.sh`
     download the kit to ~/.harness-kit and install into the current folder; no-arg `npx`; npm postinstall like claudekit
+  - V007 (2.0.1) fixes from three independent read-only reviews (code, end-to-end install, docs): hook recognition
+    for any launcher + dispatcher kept while hooks remain, UTF-8 hook stdin, locked verification/scope of started
+    features, duplicate ids, repairable feature list, narrowed allow list (`try`/`verify`/`setup`/`loop` prompt), `ask`
+    on harness config, unmanaged runtime kept, quiet re-install, first-time-only postinstall, install.ps1 in a script
+    block; 105 tests (6 new regressions, each confirmed to fail on 2.0.0); details in docs/DECISIONS.md
 
 ## In Progress
 - [ ] (none)
@@ -48,6 +53,9 @@ _Auto-updated by `harness.py handoff` at 2026-10-15T20:13:55+07:00_
 - Skills are exercised by frontmatter tests and manual runs only, not by automated agent runs.
 - v1 known issues still apply (detectors not field-tested on non-Python/Node repos; PHP/Composer 1 caveat; `loop` is
   not a sandbox).
+- The shell guard is a guardrail, not a parser: writes through e.g. `python -c "json.dump(...)"` are not caught; the
+  gates (`verify`, `loop` integrity checks) remain the real protection. Open review items: install/update re-add
+  rules or hooks the user removed on purpose; `uninstall` leaves the `$schema` key; empty projects still get H006.
 
 ## Next Steps
 1. Field test: `harness install` on a real project, one full `/hk-init` session; log failures with `fail --layer`.

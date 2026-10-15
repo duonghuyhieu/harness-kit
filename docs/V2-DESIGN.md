@@ -26,14 +26,14 @@ Non-goals: domain skills (UI, payments, media…), network calls, third-party de
 |---|---|
 | `settings.json` copied whole: skipped when present (hooks silently missing) or overwritten with `--force` | semantic merge: harness entries are added per event, identified by the dispatcher path; user entries kept |
 | no manifest, no uninstall, stale files after upgrades | `<project>/.claude/harness-kit.json` manifest (sha256 per file) → `update`, `uninstall`, `doctor` |
-| relative hook paths break when started from a subdirectory | commands use `"$CLAUDE_PROJECT_DIR"` |
+| relative hook paths break when started from a subdirectory | hook commands use `"$CLAUDE_PROJECT_DIR"`; the status line (which gets no such variable) uses `<project>/.claude/hooks/harness_hook.py` relative to the session directory |
 | one node process per hook script, 3–6 per tool call | one Python dispatcher per event, logic in the runtime, loaded in-process |
 | hooks that "talk to nobody" (wrong output fields) | each event's output contract is unit-tested (`hookSpecificOutput`, `decision`, exit codes) |
 | `permissionDecision: "allow"` used to inject hints (auto-approves every write) | the harness never returns `allow`; only `deny`/`ask` or no decision |
 | no `permissions` block | ships `deny` for secrets and force-push, `ask` for destructive commands |
 | 79 skills / 21 MB copied into every project | 16 focused skills, ~100 KB, all about the harness workflow |
 | MUST/MANDATORY prompts repeated in many files | single source of truth: `AGENTS.md` + runtime; skills reference commands, hooks inject only dynamic state |
-| postinstall writes into the repo on every `npm install` | no postinstall; install is an explicit command |
+| postinstall writes into the repo on every `npm install` | the postinstall of `npm install -D` installs only the first time (no `<project>/.claude/harness-kit.json` yet), never in CI, never for global/npx/transitive installs, and never fails npm; updates are explicit (re-run the install command) |
 
 ## 3. Layout after `harness install` (level `standard`)
 
@@ -60,12 +60,12 @@ broken hook must never brick a session. Secrets are protected by `permissions.de
 |---|---|---|---|
 | SessionStart (`startup\|resume\|clear\|compact`) | `hook-session-start` | injects ≤ 40 lines: features n/m, VCR, active feature + verification, next step, last check + age, uncommitted files; after `compact` also the pre-compaction snapshot | L03, L05 |
 | UserPromptSubmit | `hook-prompt` | when a feature is active: one reminder line (id, scope, WIP=1); deduplicated (state hash, 10-minute TTL) | L07 |
-| PreToolUse (`Edit\|Write\|MultiEdit\|NotebookEdit\|Bash`) | `hook-guard` | deny hand edits of harness-owned state (`status`/`evidence` in the feature list, `.harness/` logs); `ask` for writes outside the active feature's scope (config `scope_guard`) | L07, L08 |
-| PostToolUse (`Edit\|Write\|MultiEdit\|NotebookEdit`) | `hook-activity` | appends `{ts, session, tool, file}` to `.harness/activity.jsonl` (git-ignored, rotated) | L11 |
+| PreToolUse (`Edit\|Write\|MultiEdit\|NotebookEdit\|Bash\|PowerShell`) | `hook-guard` | deny hand edits of harness-owned state (`status`/`evidence`/`attempts` in the feature list, `.harness/` logs), of how a started feature is judged (`verification`, `verify_check`, `scope`, `cwd`, `activated_commit`) and duplicate ids; `ask` for writes outside the active feature's scope (config `scope_guard`) and for edits of the harness configuration (`.harness/config.json`, `.claude/settings*.json`, the dispatcher) | L07, L08 |
+| PostToolUse (`Edit\|Write\|MultiEdit\|NotebookEdit\|Bash\|PowerShell`) | `hook-activity` | appends `{ts, session, tool, file or command}` to `.harness/activity.jsonl` (git-ignored; append-only, rotated atomically) | L11 |
 | PreCompact | `hook-precompact` | writes `<project>/.harness/compact-snapshot.md` (status, active feature, files touched this session) | L05 |
 | Stop | `hook-stop` (v1) | blocks finishing on cheap violations (debug code, junk, hand-edited passing, WIP > 1); never twice in a row | L12 |
 | SessionEnd | `hook-session-end` | logs the session end and whether a handoff happened | L11, L12 |
-| statusLine | `statusline` | `HK F012 active · 14/19 ✓ VCR 0.93 · check ✓ 12m · ctx 42%` (+ `handoff soon` above 70 % context) | L05, L11 |
+| statusLine | `statusline` | `HK │ F012 active │ 14/19 passing · VCR 0.93 │ check PASS 12m │ ctx 42%` (+ `handoff soon` above 70 % context: the compaction snapshot is the fallback) | L05, L11 |
 
 ## 5. Skills (slash commands)
 
@@ -105,7 +105,8 @@ namespace.
 ## 7. Lifecycle commands
 
 - `harness install [path]` — retrofit + Claude layer + manifest. `--global` installs only skills and agents into
-  `~/.claude` (no hooks: they need a project runtime). `--no-claude` = v1 `retrofit`.
+  `~/.claude` (no hooks: they need a project runtime). On a project that already has a manifest, `install` runs
+  `update`. `harness retrofit [path]` = the v1 agent-agnostic files only.
 - `harness update [path]` — re-render: unmodified files are replaced, modified ones get a proposal in
   `.harness/proposals/`, files dropped from the kit are removed if unmodified; the runtime is upgraded.
 - `harness uninstall [path]` — removes unmodified manifest files and the harness entries in `settings.json`; the

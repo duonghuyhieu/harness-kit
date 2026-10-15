@@ -730,6 +730,37 @@
       "priority": 6,
       "activated_at": "2026-10-15T20:11:59+07:00",
       "activated_commit": "570ec9d7b26ca3767838a43555dca8265fff870d"
+    },
+    {
+      "id": "V007",
+      "category": "bug",
+      "behavior": "2.0.1 review fixes: hooks recognized after any launcher and dispatcher kept while hooks remain; UTF-8 hook stdin; started features' verification/scope locked, duplicate ids denied, broken list repairable; narrowed allow list and ask on harness config; unmanaged scripts/harness.py kept; reinstall = quiet update; first-time-only postinstall; robust install.ps1",
+      "verification": "python -m unittest tests.test_v2 -q && node --check bin/postinstall.js",
+      "status": "passing",
+      "depends_on": [],
+      "evidence": {
+        "verified_at": "2026-10-15T21:52:59+07:00",
+        "commit": "d8d686d",
+        "command": "python -m unittest tests.test_v2 -q && node --check bin/postinstall.js",
+        "exit_code": 0,
+        "duration_s": 16.0,
+        "project_check": "quick",
+        "output_tail": "----------------------------------------------------------------------\nRan 18 tests in 15.837s\n\nOK"
+      },
+      "scope": [
+        "harness_kit/*",
+        "harness_kit/templates/claude/skills/*",
+        "scripts/harness.py",
+        "tests/*",
+        "bin/*",
+        "install.ps1",
+        "package.json",
+        "*.md",
+        "docs/*"
+      ],
+      "priority": 7,
+      "activated_at": "2026-10-15T21:50:40+07:00",
+      "activated_commit": "d8d686d540bf647ebe09da70f0efe77d316ecf66"
     }
   ]
 }

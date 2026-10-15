@@ -5,6 +5,7 @@ import contextlib
 import io
 import json
 import os
+import re
 import subprocess
 import sys
 import tempfile
@@ -499,7 +500,7 @@ class RetrofitTests(unittest.TestCase):
             s = json.loads((root / ".claude/settings.json").read_text(encoding="utf-8"))
             self.assertEqual(s["model"], "opus")
             self.assertEqual(s["permissions"]["allow"][0], "Bash(make *)")
-            self.assertIn("Bash(python scripts/harness.py *)", s["permissions"]["allow"])
+            self.assertIn("Bash(python scripts/harness.py status)", s["permissions"]["allow"])
             self.assertEqual(s["permissions"]["deny"][0], "Read(./secrets/**)")
             self.assertIn("Bash(git push --force *)", s["permissions"]["deny"])
             self.assertEqual(s["hooks"]["PreToolUse"][0], user_settings["hooks"]["PreToolUse"][0])  # user entry first
@@ -820,7 +821,12 @@ class GapFeatureTests(unittest.TestCase):
         self.assertFalse((self.root / ".claude").exists())  # default retrofit in setUp: no guardrails
         scaffold.retrofit(self.root, claude=True)
         settings = json.loads((self.root / ".claude" / "settings.json").read_text(encoding="utf-8"))
-        self.assertIn("Bash(python scripts/harness.py *)", settings["permissions"]["allow"])
+        allow = settings["permissions"]["allow"]
+        self.assertIn("Bash(python scripts/harness.py status)", allow)
+        self.assertIn("Bash(python scripts/harness.py next *)", allow)
+        # commands that run a verification command from an agent-editable file are never auto-allowed
+        self.assertNotIn("Bash(python scripts/harness.py *)", allow)
+        self.assertFalse([r for r in allow if re.search(r"harness\.py (try|verify|setup|loop)\b", r)])
         self.assertIn("Bash(git push --force *)", settings["permissions"]["deny"])
         self.assertIn("Read(./.env)", settings["permissions"]["deny"])
         hook = settings["hooks"]["Stop"][0]["hooks"][0]

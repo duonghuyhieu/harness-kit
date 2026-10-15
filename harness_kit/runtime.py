@@ -41,7 +41,7 @@ import sys
 import time
 from pathlib import Path
 
-VERSION = "2.0.0"
+VERSION = "2.0.1"
 STATES = ("not_started", "active", "blocked", "passing")
 STATUS_ALIASES = {"not_started": "not_started", "todo": "not_started", "planned": "not_started", "fail": "not_started",
                   "active": "active", "in_progress": "active", "blocked": "blocked",
@@ -145,6 +145,8 @@ class Harness:
 
     # ---------------------------------------------------------- trace ---
     def trace(self, cmd: str, result: str, **extra) -> None:
+        if os.environ.get("HARNESS_NO_TRACE") == "1":  # `doctor` smoke-tests the hooks without leaving a record
+            return
         self.hdir.mkdir(exist_ok=True)
         entry = {"ts": now_iso(), "cmd": cmd, "result": result, **extra}
         with (self.hdir / "trace.jsonl").open("a", encoding="utf-8") as fh:
@@ -1003,9 +1005,8 @@ def cmd_hook_stop(h: Harness, args) -> int:
         return 0
     payload = {}
     try:
-        if not sys.stdin.isatty():
-            raw = sys.stdin.read()
-            payload = json.loads(raw) if raw.strip() else {}
+        raw = _stdin_text()
+        payload = json.loads(raw) if raw.strip() else {}
     except (ValueError, OSError):
         payload = {}
     if payload.get("stop_hook_active"):  # already continued once because of this hook: never loop
@@ -2173,8 +2174,8 @@ def cmd_hook_pretool(h: Harness, args) -> int:
     if getattr(args, "root", None):
         h = Harness(Path(args.root))
     try:
-        payload = json.loads(sys.stdin.read() or "{}")
-    except ValueError:
+        payload = json.loads(_stdin_text() or "{}")
+    except (ValueError, OSError):
         payload = {}
     role, fid = os.environ.get("HARNESS_ROLE", "reviewer"), os.environ.get("HARNESS_FEATURE", "")  # fail closed
     tool, tin = payload.get("tool_name", ""), payload.get("tool_input") or {}
@@ -2218,16 +2219,51 @@ HOOK_STATE_FILES = {".harness/trace.jsonl", ".harness/last-check.json", ".harnes
                     ".harness/activity.jsonl", ".harness/hook-state.json", ".harness/compact-snapshot.md",
                     ".harness/failures.jsonl"}
 GUARDED_FEATURE_FIELDS = ("status", "evidence", "attempts", "loop_runs")
-SHELL_WRITE_RE = r"(>>?|\btee\b|\bsed\s+(-[a-zA-Z]*i|--in-place)|Set-Content|Add-Content|Out-File)[^|;&]*"
+# how a feature is judged: fixed once it is active or passing, or editing it would bypass the pass-gate
+LOCKED_WHEN_STARTED = ("verification", "verify_check", "scope", "cwd", "activated_commit", "activated_at")
+# files that turn the harness itself off or redirect it: an edit needs the user's approval
+GUARD_CONFIG_FILES = {".harness/config.json", ".claude/settings.json", ".claude/settings.local.json",
+                      ".claude/hooks/harness_hook.py"}
+SHELL_WRITE_RE = (r"(>>?|\btee\b|\bsed\s+(-[a-zA-Z]*i|--in-place)|Set-Content|Add-Content|Out-File|"
+                  r"\bgit\s+(checkout|restore)\b)[^|;&\n]*")
+SHELL_COPY_RE = r"\b(cp|mv|Copy-Item|Move-Item)\b[^|;&\n]*[\s/]"  # the target is the destination: the last argument
+
+
+def _shell_writes(command: str, target_re: str) -> bool:
+    flags = re.I if os.name == "nt" else 0
+    return bool(re.search(SHELL_WRITE_RE + target_re, command, flags) or
+                re.search(SHELL_COPY_RE + target_re + r"\s*($|[|;&\n])", command, flags))
+
+
+def _stdin_text() -> str:
+    """Hook payloads are UTF-8 JSON: read bytes, so a Windows code page never mangles a non-ASCII path."""
+    if sys.stdin is None or sys.stdin.isatty():
+        return ""
+    buf = getattr(sys.stdin, "buffer", None)
+    return buf.read().decode("utf-8-sig", "replace") if buf is not None else sys.stdin.read()
 
 
 def _hook_payload() -> dict:
     try:
-        raw = "" if sys.stdin is None or sys.stdin.isatty() else sys.stdin.read()
+        raw = _stdin_text()
         data = json.loads(raw) if raw.strip() else {}
     except (ValueError, OSError):
         return {}
     return data if isinstance(data, dict) else {}
+
+
+def _path_key(rel: str) -> str:
+    """Windows paths are case-insensitive: compare `.HARNESS/Session.json` like `.harness/session.json`."""
+    return rel.casefold() if os.name == "nt" else rel
+
+
+def _shell_scan_text(command: str) -> str:
+    """The parts of a shell command that can name a write target: heredoc bodies and quoted prose (commit messages,
+    echo text) are dropped, a quoted single word (a quoted path) is kept, backslashes become slashes."""
+    text = re.sub(r"<<-?\s*(['\"]?)(\w+)\1[^\n]*\n.*?\n\s*\2\s*(?=\n|$)", "<<heredoc", command, flags=re.S)
+    text = re.sub(r"(\"[^\"]*\"|'[^']*')", lambda m: m.group(0)[1:-1] if not re.search(r"\s", m.group(0)[1:-1])
+                  else '""', text)
+    return text.replace("\\", "/")
 
 
 def _emit(event: str, **fields) -> None:
@@ -2357,9 +2393,13 @@ def _status_of(f: dict):
     return STATUS_ALIASES.get(str(raw).lower().replace("-", "_"), raw) if raw is not None else None
 
 
-def _feature_map(data) -> dict:
+def _feature_items(data) -> list:
     items = data.get("features", []) if isinstance(data, dict) else data
-    return {str(f.get("id")): f for f in items if isinstance(f, dict)} if isinstance(items, list) else {}
+    return [f for f in items if isinstance(f, dict)] if isinstance(items, list) else []
+
+
+def _feature_map(data) -> dict:
+    return {str(f.get("id")): f for f in _feature_items(data)}
 
 
 def _proposed_text(current: str, tool: str, tin: dict) -> str | None:
@@ -2379,14 +2419,27 @@ def _proposed_text(current: str, tool: str, tin: dict) -> str | None:
 def _feature_list_violation(h: Harness, tool: str, tin: dict) -> str | None:
     """Lesson 08: status/evidence are owned by the harness. Other fields (behavior, scope, notes) may be edited."""
     p = h.path("feature_list")
-    current = p.read_text(encoding="utf-8") if p.exists() else "[]"
+    current = p.read_text(encoding="utf-8", errors="replace") if p.exists() else "[]"
     proposed = _proposed_text(current, tool, tin)
     if proposed is None:
         return None
     try:
-        old_map, new_map = _feature_map(json.loads(current)), _feature_map(json.loads(proposed))
+        new_data = json.loads(proposed)
     except ValueError:
         return f"the edit would leave {h.cfg['feature_list']} as invalid JSON"
+    try:
+        old_data = json.loads(current)
+    except ValueError:
+        # the file is already broken: judge the repair against the last committed version, if there is one
+        try:
+            old_data = json.loads(h.git("show", f"HEAD:{h.cfg['feature_list']}") or "[]")
+        except ValueError:
+            old_data = []
+    ids = [str(f.get("id")) for f in _feature_items(new_data)]
+    dupes = sorted({i for i in ids if ids.count(i) > 1})
+    if dupes:
+        return f"duplicate feature id(s) {', '.join(dupes)}: every id must be unique"
+    old_map, new_map = _feature_map(old_data), _feature_map(new_data)
     for fid, new in new_map.items():
         old = old_map.get(fid)
         if old is None:
@@ -2398,6 +2451,12 @@ def _feature_list_violation(h: Harness, tool: str, tin: dict) -> str | None:
                     (_status_of(old) if field == "status" else old.get(field)):
                 return (f"`{field}` of {fid} is harness state: change it with `python scripts/harness.py "
                         f"next/verify/block/unblock`, never by hand")
+        if _status_of(old) in ("active", "passing"):
+            for field in LOCKED_WHEN_STARTED:
+                if new.get(field) != old.get(field):
+                    return (f"`{field}` of {fid} is fixed while it is {_status_of(old)}: changing how a started "
+                            f"feature is judged would bypass the pass-gate (block it with a reason, unblock, then "
+                            f"edit; or record the change as a new feature with `add`)")
     for fid, old in old_map.items():
         if fid not in new_map and _status_of(old) != "not_started":
             return f"{fid} is {_status_of(old)}: removing it would hide work (block it with a reason instead)"
@@ -2416,13 +2475,17 @@ def cmd_hook_guard(h: Harness, args) -> int:
         rel = _rel_to_root(h, str(tin.get("file_path") or tin.get("notebook_path") or ""))
         if rel is None:
             return 0
-        if rel == h.cfg["feature_list"] and tool != "NotebookEdit":
+        key = _path_key(rel)
+        if key == _path_key(h.cfg["feature_list"]) and tool != "NotebookEdit":
             reason = _feature_list_violation(h, tool, tin)
-        elif rel in HOOK_STATE_FILES or rel.startswith(".harness/runs/"):
+        elif key in {_path_key(p) for p in HOOK_STATE_FILES} or key.startswith(".harness/runs/"):
             reason = f"{rel} is written by the harness runtime only"
-        elif rel == "scripts/harness.py":
+        elif key == "scripts/harness.py":
             reason = "scripts/harness.py is managed by harness-kit: change the kit and run `harness update`"
         decision = "deny" if reason else None
+        if not decision and key in {_path_key(p) for p in GUARD_CONFIG_FILES}:
+            decision, reason = "ask", (f"{rel} configures the harness itself (commands, hooks, guards): approve only "
+                                       f"if you asked for this change")
         mode = h.cfg.get("scope_guard", "ask")
         if not decision and mode in ("ask", "deny"):
             for f in h.load_features():
@@ -2434,10 +2497,12 @@ def cmd_hook_guard(h: Harness, args) -> int:
                               f"if it belongs to {f['id']}; otherwise record it as a new feature")
                     break
     elif tool in ("Bash", "PowerShell"):
-        command = str(tin.get("command", ""))
+        command = _shell_scan_text(str(tin.get("command", "")))
         targets = [re.escape(h.cfg["feature_list"])] + [re.escape(p) for p in HOOK_STATE_FILES]
-        if any(re.search(SHELL_WRITE_RE + t, command) for t in targets):
+        if any(_shell_writes(command, t) for t in targets):
             decision, reason = "deny", "harness state files are changed only through scripts/harness.py"
+        elif any(_shell_writes(command, re.escape(p)) for p in GUARD_CONFIG_FILES):
+            decision, reason = "ask", "the command writes a file that configures the harness itself"
     if not decision:
         return 0
     h.trace("hook-guard", decision, tool=tool, reason=reason)
@@ -2460,12 +2525,18 @@ def cmd_hook_activity(h: Harness, args) -> int:
     elif tin.get("command"):
         rec["command"] = str(tin["command"])[:160]
     p = h.hdir / "activity.jsonl"
-    lines = p.read_text(encoding="utf-8", errors="replace").splitlines() if p.exists() else []
-    lines.append(json.dumps(rec, ensure_ascii=False))
+    with p.open("a", encoding="utf-8") as fh:  # append: parallel tool calls never lose a record
+        fh.write(json.dumps(rec, ensure_ascii=False) + "\n")
     keep = int(h.cfg.get("activity_max_lines", 2000))
-    if len(lines) > keep:
-        lines = lines[-keep // 2:]
-    p.write_text("\n".join(lines) + "\n", encoding="utf-8")
+    try:
+        if p.stat().st_size > keep * 160:  # cheap size test first; rotate rarely, atomically
+            lines = p.read_text(encoding="utf-8", errors="replace").splitlines()
+            if len(lines) > keep:
+                tmp = h.hdir / "activity.jsonl.tmp"
+                tmp.write_text("\n".join(lines[-keep // 2:]) + "\n", encoding="utf-8")
+                os.replace(tmp, p)
+    except OSError:
+        pass  # another hook is rotating it: try again next time
     return 0
 
 

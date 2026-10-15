@@ -150,6 +150,70 @@ class ClaudeHookTests(unittest.TestCase):
         self.assertEqual(run_dispatcher(self.root, "session-end", {"reason": "other"})[0], 0)
         self.assertIn('"session-end"', (self.root / ".harness/trace.jsonl").read_text(encoding="utf-8"))
 
+    # ---- regressions from the independent review of 2.0.0 (15/10/2026) ----
+
+    def feature_list_write(self, fid: str, **changes) -> dict:
+        data = json.loads((self.root / "feature_list.json").read_text(encoding="utf-8"))
+        for f in data["features"]:
+            if f["id"] == fid:
+                f.update(changes)
+        return {"tool_name": "Write", "tool_input": {"file_path": str(self.root / "feature_list.json"),
+                                                    "content": json.dumps(data, indent=2)}}
+
+    def decision(self, payload: dict):
+        return hook_output(run_dispatcher(self.root, "guard", payload)[1]).get("permissionDecision")
+
+    def test_guard_locks_how_a_started_feature_is_judged(self):
+        """Editing an active feature's verification to `exit 0` made `verify` pass without the real check."""
+        self.assertIsNone(self.decision(self.feature_list_write("H001", verification="exit 0")))  # planning: allowed
+        run_rt(self.root, "next", "--id", "H001")
+        self.assertEqual(self.decision(self.feature_list_write("H001", verification="exit 0")), "deny")
+        self.assertEqual(self.decision(self.feature_list_write("H001", scope=["**"])), "deny")
+        self.assertEqual(self.decision(self.feature_list_write("H001", activated_commit="0000000")), "deny")
+        self.assertIsNone(self.decision(self.feature_list_write("H001", behavior="clearer wording")))
+
+    def test_guard_denies_duplicate_ids_and_allows_repairing_a_broken_list(self):
+        p = self.root / "feature_list.json"
+        data = json.loads(p.read_text(encoding="utf-8"))
+        first = data["features"][0]
+        data["features"].insert(0, {**first, "status": "passing", "evidence": {"exit_code": 0}})
+        out = hook_output(run_dispatcher(self.root, "guard", {"tool_name": "Write", "tool_input": {
+            "file_path": str(p), "content": json.dumps(data)}})[1])
+        self.assertEqual(out["permissionDecision"], "deny")
+        self.assertIn("duplicate", out["permissionDecisionReason"])
+        good = p.read_text(encoding="utf-8")
+        p.write_text(good[:-30], encoding="utf-8")  # truncated by a crash
+        self.assertIsNone(self.decision({"tool_name": "Write", "tool_input": {"file_path": str(p), "content": good}}))
+
+    def test_guard_shell_rules_target_writes_not_prose(self):
+        def bash(cmd):
+            return self.decision({"tool_name": "Bash", "tool_input": {"command": cmd}})
+        for cmd in ("cp /tmp/x feature_list.json", "mv t.json feature_list.json", 'echo x > "feature_list.json"',
+                    "git checkout HEAD~1 -- feature_list.json", "echo {} > .harness\\session.json"):
+            self.assertEqual(bash(cmd), "deny", cmd)
+        for cmd in ('git commit -m "feat: login -> verified, feature_list.json updated by verify"',
+                    "cat >> PROGRESS.md <<'EOF'\nverify wrote feature_list.json\nEOF",
+                    "cp feature_list.json /tmp/backup.json", "cat feature_list.json"):
+            self.assertIsNone(bash(cmd), cmd)
+        self.assertEqual(bash("echo '{}' > .harness/config.json"), "ask")
+        self.assertEqual(self.decision(self.write(".claude/settings.json")), "ask")  # turning the harness off
+        if os.name == "nt":
+            self.assertEqual(self.decision(self.write(".HARNESS/Session.json")), "deny")
+
+    def test_guard_reads_utf8_paths_whatever_the_code_page(self):
+        """Windows decoded piped stdin with the ANSI code page: non-ASCII paths slipped past the guard."""
+        with tempfile.TemporaryDirectory(prefix="dự-án-") as d:
+            root = Path(d)
+            make_python_project(root)
+            quiet_install(root)
+            payload = {"tool_name": "Write", "tool_input": {"file_path": str(root / ".harness" / "session.json"),
+                                                            "content": "{}"}}
+            env = {k: v for k, v in os.environ.items() if k not in ("PYTHONUTF8", "PYTHONIOENCODING")}
+            proc = subprocess.run([sys.executable, str(root / ".claude/hooks/harness_hook.py"), "guard"], cwd=root,
+                                  input=json.dumps(payload, ensure_ascii=False).encode("utf-8"), capture_output=True,
+                                  env={**env, "CLAUDE_PROJECT_DIR": str(root)})
+            self.assertEqual(hook_output(proc.stdout.decode("utf-8"))["permissionDecision"], "deny")
+
 
 class InstallerTests(unittest.TestCase):
     """`harness install / update / uninstall / doctor`: manifest-tracked, never touches what the user changed."""
@@ -210,7 +274,8 @@ class InstallerTests(unittest.TestCase):
             root = Path(d)
             make_python_project(root)
             scaffold.retrofit(root)
-            (root / "scripts/harness.py").write_text("# old runtime\n", encoding="utf-8")
+            (root / "scripts/harness.py").write_text("#!/usr/bin/env python3\n# File managed by harness-kit (updated via "
+                                                     "`harness upgrade`)\n# old runtime\n", encoding="utf-8")
             (root / ".harness/.gitignore").write_text("trace.jsonl\n", encoding="utf-8")
             (root / ".claude").mkdir()
             (root / ".claude/settings.json").write_text(json.dumps({"statusLine": {"type": "command", "command": "mine"}}))
@@ -254,6 +319,61 @@ class InstallerTests(unittest.TestCase):
             out = installer.install_global(dest)  # re-run keeps the user's change
             self.assertEqual((dest / "skills/hk-start/SKILL.md").read_text(encoding="utf-8"), "mine")
             self.assertIn("Kept 1", out)
+
+    def test_uninstall_never_leaves_hooks_without_their_dispatcher(self):
+        """`--python py` hooks were not recognized: update duplicated them, uninstall left them pointing at a deleted
+        dispatcher (exit 2 blocks every prompt)."""
+        for python in ("py", "py -3.12", "python3.12", "uv run python"):
+            with tempfile.TemporaryDirectory() as d:
+                root = Path(d)
+                make_python_project(root)
+                with contextlib.redirect_stdout(io.StringIO()):
+                    installer.install(root, python=python)
+                    installer.update(root)
+                hooks = json.loads((root / ".claude/settings.json").read_text(encoding="utf-8"))["hooks"]
+                for event, entries in hooks.items():
+                    ours = [h for e in entries for h in e["hooks"] if scaffold._is_harness_hook(h)]
+                    self.assertEqual(len(ours), 1, (python, event))
+                installer.uninstall(root)
+                self.assertFalse((root / ".claude/settings.json").exists(), python)
+                self.assertFalse((root / ".claude/hooks").exists(), python)
+        with tempfile.TemporaryDirectory() as d:  # settings.json cannot be stripped: keep the dispatcher
+            root = Path(d)
+            make_python_project(root)
+            quiet_install(root)
+            (root / ".claude/settings.json").write_text("{ not json", encoding="utf-8")
+            out = installer.uninstall(root)
+            self.assertTrue((root / ".claude/hooks/harness_hook.py").exists())
+            self.assertIn("Kept .claude/hooks/harness_hook.py", out)
+
+    def test_reinstall_is_a_quiet_update_and_unmanaged_runtime_is_kept(self):
+        with tempfile.TemporaryDirectory() as d:
+            root = Path(d)
+            make_python_project(root)
+            quiet_install(root)
+            proposals = sorted(p.as_posix() for p in (root / ".harness").rglob("proposals/**/*"))
+            manifest = (root / ".claude/harness-kit.json").read_bytes()
+            out = quiet_install(root)  # the documented way to update
+            self.assertIn("is updated and active", out)
+            self.assertNotIn("Legacy instructions", out)
+            self.assertEqual(sorted(p.as_posix() for p in (root / ".harness").rglob("proposals/**/*")), proposals)
+            self.assertEqual((root / ".claude/harness-kit.json").read_bytes(), manifest)  # unchanged: not rewritten
+            self.assertIn("proposals/", (root / ".harness/.gitignore").read_text(encoding="utf-8").splitlines())
+            trace = root / ".harness/trace.jsonl"
+            before = trace.read_text(encoding="utf-8") if trace.exists() else ""
+            installer.doctor(root)
+            self.assertEqual(trace.read_text(encoding="utf-8") if trace.exists() else "", before)  # doctor is read-only
+            for skill in ("hk-init", "hk-audit"):  # no machine-specific kit path in committed files
+                self.assertNotIn(scaffold.KIT_ROOT.as_posix(),
+                                 (root / f".claude/skills/{skill}/SKILL.md").read_text(encoding="utf-8"))
+        with tempfile.TemporaryDirectory() as d:
+            root = Path(d)
+            make_python_project(root)
+            (root / "scripts").mkdir()
+            (root / "scripts/harness.py").write_text("print('my own test harness')\n", encoding="utf-8")
+            out = quiet_install(root)
+            self.assertEqual((root / "scripts/harness.py").read_text(encoding="utf-8"), "print('my own test harness')\n")
+            self.assertIn("is not the harness-kit runtime", out)
 
     def test_payload_frontmatter_is_valid(self):
         """Skill names match their directory (Agent Skills spec); agents declare name, description and tools."""
