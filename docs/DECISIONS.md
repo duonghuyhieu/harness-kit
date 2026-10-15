@@ -157,13 +157,13 @@
   an error instead of the harness line — listed in Known Issues).
 
 
-## 2026-10-16 — 2.1.1: version check at install, CI, .git protected
+## 2026-10-15 — 2.1.1: version check at install, CI, .git protected
 
 - R21: the install message warns when Claude Code is older than the version the hooks were verified on (2.1.287).
 - R19: GitHub Actions runs the unit tests on Ubuntu, Windows and macOS with Python 3.10 and 3.12.
 - R3: `Edit(./.git/**)` is denied: git internals change only through git.
 
-## 2026-10-16 — 2.1.2: Python 3.10 reads TOML again
+## 2026-10-15 — 2.1.2: Python 3.10 reads TOML again
 
 - Python 3.10 has no `tomllib`: the kit silently skipped `pyproject.toml` / `Cargo.toml`, so detection was weaker
   than on 3.11+ although 3.10 is the documented minimum. Found by the new CI (Ubuntu, Python 3.10). A small
