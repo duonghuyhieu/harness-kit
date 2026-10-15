@@ -41,7 +41,7 @@ import sys
 import time
 from pathlib import Path
 
-VERSION = "2.1.2"
+VERSION = "2.1.3"
 STATES = ("not_started", "active", "blocked", "passing")
 STATUS_ALIASES = {"not_started": "not_started", "todo": "not_started", "planned": "not_started", "fail": "not_started",
                   "active": "active", "in_progress": "active", "blocked": "blocked",
@@ -671,6 +671,15 @@ def _run_project_check(h: Harness, f: dict, ver: str, skip: bool) -> tuple[bool,
     if cmd_check(h, argparse.Namespace(full=(level == "full"), only=None)) != 0:
         h.trace("verify", "fail", feature=f["id"], reason="project check failed")
         print(f"[FAIL] {f['id']} was not moved to passing because the project-wide check failed.")
+        pending = [x["id"] for x in h.load_features() if x.get("status") == "not_started"
+                   and x.get("category") != "harness"]  # product features; H00x are the setup baseline
+        if pending:
+            # found in a multi-session experiment: tests written up front for later features keep the baseline red,
+            # so no feature can ever pass, and WIP=1 + the scope guard forbid fixing it inside this feature
+            print(f"  NOTE: {f['id']}'s own verification passed. {len(pending)} feature(s) have not started yet "
+                  f"({', '.join(pending[:5])}). If the failing tests belong to them, the baseline is red by design and "
+                  f"no feature can pass: mark those tests pending (skip until their feature is implemented) or leave "
+                  f"them out of commands.test. Do not implement another feature inside {f['id']} (WIP=1).")
         return False, level
     return True, level
 

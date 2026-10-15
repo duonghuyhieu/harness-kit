@@ -168,3 +168,10 @@
 - Python 3.10 has no `tomllib`: the kit silently skipped `pyproject.toml` / `Cargo.toml`, so detection was weaker
   than on 3.11+ although 3.10 is the documented minimum. Found by the new CI (Ubuntu, Python 3.10). A small
   stdlib TOML reader is the fallback; a test pins it against `tomllib` on pyproject, Cargo and toolchain files.
+
+## 2026-10-16 — 2.1.3: a red baseline from future features is explained, not just failed
+
+- Found in experiment 2 (multi-session): tests written up front for later features kept the project check red, so
+  `verify` could never pass the first feature, and WIP=1 plus the scope guard forbade fixing it inside that feature;
+  the agent blocked, forced and unblocked features in a loop. `verify` now says when its own verification passed,
+  which product features have not started, and what to do (pending tests or leave them out of `commands.test`).

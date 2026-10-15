@@ -243,6 +243,17 @@ class ClaudeHookTests(unittest.TestCase):
         self.assertNotEqual(code, 0)
         self.assertIn("unknown key `bogus_key`", out)
 
+    def test_verify_explains_a_red_baseline_from_future_features(self):
+        """Experiment 2: up-front tests of later features keep the project check red; verify must say why."""
+        run_rt(self.root, "add", "--id", "F1", "--behavior", "b", "--verify", f"{PY} -c pass")
+        run_rt(self.root, "add", "--id", "F2", "--behavior", "c", "--verify", f"{PY} -c pass")
+        set_commands(self.root, test=f"{PY} -c \"import sys; sys.exit(1)\"")
+        run_rt(self.root, "next", "--id", "F1")
+        code, out = run_rt(self.root, "verify", "F1")
+        self.assertNotEqual(code, 0)
+        self.assertIn("baseline is red by design", out)
+        self.assertIn("F2", out)
+
     def test_injected_context_is_logged_with_a_hash(self):
         """R13: what the model saw can be traced back: session id, event, content hash."""
         run_dispatcher(self.root, "session-start", {"source": "startup", "session_id": "sess-42"})
