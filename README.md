@@ -20,14 +20,14 @@ line, settings) and the harness files right there. Then open the folder in Claud
 
 ```bash
 # Windows (PowerShell)
-irm https://raw.githubusercontent.com/duonghuyhieu/harness/main/install.ps1 | iex
+irm https://raw.githubusercontent.com/duonghuyhieu/harness-kit/main/install.ps1 | iex
 
 # macOS / Linux / Git Bash
-curl -fsSL https://raw.githubusercontent.com/duonghuyhieu/harness/main/install.sh | bash
+curl -fsSL https://raw.githubusercontent.com/duonghuyhieu/harness-kit/main/install.sh | bash
 
 # npm (Node ≥ 18)
-npx github:duonghuyhieu/harness                  # installs into the current folder
-npm install -D github:duonghuyhieu/harness       # same, automatically on install (like claudekit)
+npx github:duonghuyhieu/harness-kit                  # installs into the current folder
+npm install -D github:duonghuyhieu/harness-kit       # same, automatically on install (like claudekit)
 ```
 
 Requirement: Python ≥ 3.10 on PATH (no packages) — the hooks run on it. Re-running the same command updates the kit

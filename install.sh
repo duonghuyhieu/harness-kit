@@ -1,14 +1,14 @@
 #!/usr/bin/env bash
 # harness-kit one-line installer for macOS / Linux / Git Bash.
 #
-#   curl -fsSL https://raw.githubusercontent.com/duonghuyhieu/harness/main/install.sh | bash
+#   curl -fsSL https://raw.githubusercontent.com/duonghuyhieu/harness-kit/main/install.sh | bash
 #       -> installs the harness + .claude/ into the CURRENT directory (run it from your project folder)
 #   curl -fsSL .../install.sh | bash -s -- /path/to/project [harness install options]
 #   ./install.sh /path/to/project [options]          (from a clone)
 #
 # Piped, the kit is downloaded to ~/.harness-kit (re-running updates it). Needs Python >= 3.10. No sudo.
 set -euo pipefail
-REPO="duonghuyhieu/harness"
+REPO="duonghuyhieu/harness-kit"
 
 PY=""
 for cand in python3 python; do

@@ -1,13 +1,13 @@
 # harness-kit one-line installer for Windows (PowerShell 5.1+ / 7).
 #
-#   irm https://raw.githubusercontent.com/duonghuyhieu/harness/main/install.ps1 | iex
+#   irm https://raw.githubusercontent.com/duonghuyhieu/harness-kit/main/install.ps1 | iex
 #       -> installs the harness + .claude/ into the CURRENT directory (run it from your project folder)
 #   .\install.ps1 C:\path\to\project [harness install options]     (from a clone)
 #   $env:HARNESS_TARGET = "C:\path\to\project"; irm ... | iex      (piped, other folder)
 #
 # Piped, the kit is downloaded to ~\.harness-kit (re-running updates it). Needs Python >= 3.10. No admin rights.
 $ErrorActionPreference = "Stop"
-$Repo = "duonghuyhieu/harness"
+$Repo = "duonghuyhieu/harness-kit"
 
 function Find-Python {
     foreach ($cand in @(@("python"), @("py", "-3"), @("python3"))) {

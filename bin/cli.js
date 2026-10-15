@@ -1,8 +1,8 @@
 #!/usr/bin/env node
 // harness-kit launcher for npm/npx. Zero dependencies: it finds Python >= 3.10 and forwards every argument to
 // harness.py (the real CLI, Python standard library only).
-//   npx github:duonghuyhieu/harness            # install into the current directory (same as `install .`)
-//   npx github:duonghuyhieu/harness doctor     # any other harness command
+//   npx github:duonghuyhieu/harness-kit            # install into the current directory (same as `install .`)
+//   npx github:duonghuyhieu/harness-kit doctor     # any other harness command
 // `init` is an alias of `install`.
 "use strict";
 const { spawnSync } = require("child_process");

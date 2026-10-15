@@ -13,14 +13,14 @@ là dùng được — không cần chạy thêm gì.
 
 ```bash
 # Windows (PowerShell)
-irm https://raw.githubusercontent.com/duonghuyhieu/harness/main/install.ps1 | iex
+irm https://raw.githubusercontent.com/duonghuyhieu/harness-kit/main/install.ps1 | iex
 
 # macOS / Linux / Git Bash
-curl -fsSL https://raw.githubusercontent.com/duonghuyhieu/harness/main/install.sh | bash
+curl -fsSL https://raw.githubusercontent.com/duonghuyhieu/harness-kit/main/install.sh | bash
 
 # npm (Node ≥ 18)
-npx github:duonghuyhieu/harness                  # cài vào thư mục hiện tại
-npm install -D github:duonghuyhieu/harness       # tự cài khi npm install (giống claudekit)
+npx github:duonghuyhieu/harness-kit                  # cài vào thư mục hiện tại
+npm install -D github:duonghuyhieu/harness-kit       # tự cài khi npm install (giống claudekit)
 ```
 
 Yêu cầu duy nhất: có Python ≥ 3.10 trên PATH (không cần cài thư viện) — hook chạy bằng Python. Chạy lại đúng lệnh đó

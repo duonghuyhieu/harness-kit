@@ -1,5 +1,5 @@
 #!/usr/bin/env node
-// `npm install -D github:duonghuyhieu/harness` installs the harness into the project right away (like claudekit).
+// `npm install -D github:duonghuyhieu/harness-kit` installs the harness into the project right away (like claudekit).
 // Never overwrites a file, never fails `npm install`. Skipped for global installs, for installs inside the kit itself,
 // for transitive installs, outside a project with package.json, and when HARNESS_SKIP_INSTALL=1.
 "use strict";

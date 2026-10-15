@@ -22,7 +22,7 @@
   "author": "Duong Huy Hieu",
   "repository": {
     "type": "git",
-    "url": "https://github.com/duonghuyhieu/harness.git"
+    "url": "https://github.com/duonghuyhieu/harness-kit.git"
   },
   "engines": {
     "node": ">=18"
