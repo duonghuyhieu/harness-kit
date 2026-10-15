@@ -94,6 +94,12 @@ def _done(root: Path, py: str, verb: str) -> str:
            f"verification baseline; /hk-help shows every command.\n"
            f"  Health check any time: {kit_command('doctor', root, py)}\n"
            f"  Update later: run the same install command again.")
+    ver = claude_version()  # R21: say so at install time when Claude Code is older than what the hooks were verified on
+    if ver is None:
+        out += "\n  NOTE: the `claude` CLI was not found; the hooks start working once Claude Code runs in this folder."
+    elif ver < TESTED_CLAUDE:
+        out += (f"\n  WARNING: Claude Code {_v(ver)} is older than {_v(TESTED_CLAUDE)}, the version the hooks were verified "
+                f"on: update Claude Code (`claude update`) — older versions may ignore injected context or hook decisions.")
     claude_md = root / "CLAUDE.md"
     if claude_md.is_file() and not scaffold.imports_agents_md(claude_md):
         out += ("\n  NOTE: your CLAUDE.md does not import AGENTS.md, so Claude Code does not see the harness rules: "

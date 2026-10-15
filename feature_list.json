@@ -791,6 +791,35 @@
       "priority": 8,
       "activated_at": "2026-10-15T22:18:41+07:00",
       "activated_commit": "556391251bc4546eea16623b47e2d81359112c7a"
+    },
+    {
+      "id": "V009",
+      "category": "feature",
+      "behavior": "2.1.1: Claude Code version warning at install (R21), CI workflow on three OSes (R19), Edit(./.git/**) denied (R3)",
+      "verification": "python -m unittest tests.test_v2 -q",
+      "status": "passing",
+      "depends_on": [],
+      "evidence": {
+        "verified_at": "2026-10-15T23:21:41+07:00",
+        "commit": "1828ba7",
+        "command": "python -m unittest tests.test_v2 -q",
+        "exit_code": 0,
+        "duration_s": 21.2,
+        "project_check": "quick",
+        "output_tail": "----------------------------------------------------------------------\nRan 25 tests in 21.095s\n\nOK"
+      },
+      "scope": [
+        "harness_kit/*",
+        "scripts/harness.py",
+        "tests/*",
+        "package.json",
+        ".github/*",
+        "docs/*",
+        "*.md"
+      ],
+      "priority": 9,
+      "activated_at": "2026-10-15T23:19:24+07:00",
+      "activated_commit": "1828ba71b6d66a2a6b55a1fe93a2226de3141ec6"
     }
   ]
 }

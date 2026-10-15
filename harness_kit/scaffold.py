@@ -379,7 +379,8 @@ def make_claude_settings(inv: dict, python: str = "python", statusline: bool = T
             # PowerShell tool off for the session (Claude Code permissions docs)
             "deny": ["Bash(git push --force *)", "Bash(git push -f *)",
                      "PowerShell(git push --force *)", "PowerShell(git push -f *)",
-                     "Read(./.env)", "Read(./.env.local)", "Read(./.env.production)"],
+                     "Read(./.env)", "Read(./.env.local)", "Read(./.env.production)",
+                     "Edit(./.git/**)"],  # git internals change only through git itself
         },
         "hooks": hooks,
     }

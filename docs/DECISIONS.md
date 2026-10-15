@@ -156,3 +156,9 @@
   line keeps its relative path (Claude Code documents no project-dir variable for it; from a subdirectory it shows
   an error instead of the harness line — listed in Known Issues).
 
+
+## 2026-10-16 — 2.1.1: version check at install, CI, .git protected
+
+- R21: the install message warns when Claude Code is older than the version the hooks were verified on (2.1.287).
+- R19: GitHub Actions runs the unit tests on Ubuntu, Windows and macOS with Python 3.10 and 3.12.
+- R3: `Edit(./.git/**)` is denied: git internals change only through git.

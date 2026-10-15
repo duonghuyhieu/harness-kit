@@ -1,0 +1,31 @@
+name: tests
+on:
+  push:
+    branches: [main]
+  pull_request:
+jobs:
+  test:
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [ubuntu-latest, windows-latest, macos-latest]
+        python: ["3.10", "3.12"]
+    runs-on: ${{ matrix.os }}
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: ${{ matrix.python }}
+      - name: Configure git for the test projects
+        run: |
+          git config --global user.email "ci@example.invalid"
+          git config --global user.name "ci"
+          git config --global init.defaultBranch main
+      - name: Unit tests
+        run: python -m unittest discover -s tests -t . -q
+      - name: Launchers
+        shell: bash
+        run: |
+          node --check bin/cli.js
+          node --check bin/postinstall.js
+          bash -n install.sh
