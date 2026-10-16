@@ -904,6 +904,34 @@
       "priority": 12,
       "activated_at": "2026-10-16T10:02:28+07:00",
       "activated_commit": "c2e1b401618403b742d4bb38cfb7f75123cfd32d"
+    },
+    {
+      "id": "V013",
+      "category": "bug",
+      "behavior": "2.1.5: generated files (bytecode, caches) are never scope drift; loop prompts forbid cd prefixes",
+      "verification": "python -m unittest tests.test_v2 -q",
+      "status": "passing",
+      "depends_on": [],
+      "evidence": {
+        "verified_at": "2026-10-16T10:44:39+07:00",
+        "commit": "1382670",
+        "command": "python -m unittest tests.test_v2 -q",
+        "exit_code": 0,
+        "duration_s": 42.5,
+        "project_check": "quick",
+        "output_tail": "----------------------------------------------------------------------\nRan 30 tests in 42.170s\n\nOK"
+      },
+      "scope": [
+        "harness_kit/*",
+        "scripts/harness.py",
+        "tests/*",
+        "package.json",
+        "docs/*",
+        "*.md"
+      ],
+      "priority": 13,
+      "activated_at": "2026-10-16T10:40:48+07:00",
+      "activated_commit": "1382670908e2566b195546c3541cf9ab920cf005"
     }
   ]
 }

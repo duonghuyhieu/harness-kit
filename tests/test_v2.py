@@ -243,6 +243,24 @@ class ClaudeHookTests(unittest.TestCase):
         self.assertNotEqual(code, 0)
         self.assertIn("unknown key `bogus_key`", out)
 
+    def test_generated_files_are_never_scope_drift(self):
+        """Experiment 4: a loop commit tracked __pycache__; the next test run changed the .pyc and blocked a feature."""
+        self.assertTrue(runtime.is_generated("src/pkg/__pycache__/mod.cpython-312.pyc"))
+        self.assertTrue(runtime.is_generated("Main.class"))
+        self.assertFalse(runtime.is_generated("src/pkg/mod.py"))
+        run_rt(self.root, "add", "--id", "F1", "--behavior", "b", "--verify", f"{PY} -c pass", "--scope", "app/*")
+        cache = self.root / "app" / "__pycache__"
+        cache.mkdir(exist_ok=True)
+        (cache / "x.cpython-312.pyc").write_bytes(b"old")
+        subprocess.run(["git", "add", "-A", "-f"], cwd=self.root, capture_output=True)
+        subprocess.run(["git", "commit", "-qm", "track bytecode"], cwd=self.root, capture_output=True)
+        run_rt(self.root, "next", "--id", "F1")
+        (cache / "x.cpython-312.pyc").write_bytes(b"new")
+        h = runtime.Harness(self.root)
+        f = next(x for x in h.load_features() if x["id"] == "F1")
+        self.assertEqual(runtime._loop_drift(h, f), [])
+        self.assertEqual(runtime.scope_drift(h, f), [])
+
     def test_loop_reviewer_may_run_the_active_feature_verification(self):
         """Experiment 4: loop reviewers were denied the feature's own verification command and returned FAIL."""
         run_rt(self.root, "add", "--id", "F1", "--behavior", "b", "--verify", "python -m unittest tests.test_part2 -q")

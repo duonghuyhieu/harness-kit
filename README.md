@@ -124,7 +124,7 @@ the harness does not replace an OS-level sandbox.
 ## Development
 
 ```bash
-python -m unittest discover -s tests -t . -q     # 116 tests
+python -m unittest discover -s tests -t . -q     # 117 tests
 python scripts/harness.py check                  # this repository runs under its own harness
 ```
 

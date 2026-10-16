@@ -184,3 +184,10 @@
   0.75/3 → 2.75/3).
 - Experiment 4 (`harness.py loop`): reviewers were denied the active feature's own verification command and returned
   FAIL. The loop now allows exactly that command (and its flag variants) for both roles.
+
+## 2026-10-16 — 2.1.5: scope checks ignore generated files; agents are told not to prefix `cd`
+
+- Experiment 4, batch 2: the loop committed `__pycache__` (the task repo had no .gitignore); the next test run changed
+  the .pyc and `_loop_drift` blocked two correct features as "changed files outside the scope", which stopped the
+  dependent features. Bytecode, `.class` and files under SKIP_DIRS are now never scope drift.
+- A reviewer prefixed its commands with `cd /d "…" &&` and was denied: both prompts now say they run in the project root.

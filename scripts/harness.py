@@ -41,7 +41,7 @@ import sys
 import time
 from pathlib import Path
 
-VERSION = "2.1.4"
+VERSION = "2.1.5"
 STATES = ("not_started", "active", "blocked", "passing")
 STATUS_ALIASES = {"not_started": "not_started", "todo": "not_started", "planned": "not_started", "fail": "not_started",
                   "active": "active", "in_progress": "active", "blocked": "blocked",
@@ -601,13 +601,22 @@ def cmd_next(h: Harness, args) -> int:
     return 0
 
 
+GENERATED_SUFFIXES = (".pyc", ".pyo", ".class")
+
+
+def is_generated(rel: str) -> bool:
+    """Build/test by-products (bytecode, caches): never someone's work, never a scope violation — even when an earlier
+    commit tracked them (found in experiment 4: committed __pycache__ blocked correct features)."""
+    return rel.endswith(GENERATED_SUFFIXES) or any(part in SKIP_DIRS for part in rel.split("/")[:-1])
+
+
 def changed_files(h: Harness, base: str) -> list[str]:
     """Files changed since `base` (committed, staged, unstaged) plus untracked files."""
     names = h.git("diff", "--name-only", base or "HEAD").splitlines()
     for rel in h.git("ls-files", "--others", "--exclude-standard").splitlines():
         if not any(part in SKIP_DIRS or part.startswith(".") for part in rel.split("/")[:-1]):
             names.append(rel)
-    return sorted(set(n for n in names if n))
+    return sorted(set(n for n in names if n and not is_generated(n)))
 
 
 def scope_drift(h: Harness, f: dict) -> list[str]:
@@ -1227,6 +1236,7 @@ Out of scope: {out_of_scope}
 
 Rules:
 - First read AGENTS.md (and PROGRESS.md, docs/DECISIONS.md if present) and follow its hard constraints.
+- You are already in the project root: run commands as is, one per call, never prefixed with `cd`.
 - Change only what this feature needs, with the Write/Edit tools. Never edit feature_list.json, .harness/,
   scripts/harness.py, .claude/ or the rubric (unless your scope above names the file): the harness restores them
   and rejects the attempt.
@@ -1239,7 +1249,8 @@ Rules:
 {feedback}
 Return the JSON summary of what you did."""
 REVIEW_PROMPT = """You are an independent REVIEWER in an automated harness loop. You did not write this change; do not
-trust the maker's account. You cannot edit files.
+trust the maker's account. You cannot edit files. You are already in the project root: run every command as is, one
+command per call, never prefixed with `cd` (a `cd … &&` prefix is denied in this session).
 
 Feature {id}: {behavior}
 Verification: `python scripts/harness.py try {id}` (runs: {verification})
@@ -1897,7 +1908,7 @@ def _loop_drift(h: Harness, f: dict) -> list[str]:
     names = set(h.git("diff", "--name-only", base or "HEAD").splitlines())
     names |= {r for r in h.git("ls-files", "--others", "--exclude-standard").splitlines()
               if not any(part in SKIP_DIRS or part in IDE_DIRS for part in r.split("/")[:-1])}
-    return sorted(n for n in names if n and not any(fnmatch.fnmatch(n, g) for g in allowed))
+    return sorted(n for n in names if n and not is_generated(n) and not any(fnmatch.fnmatch(n, g) for g in allowed))
 
 
 def _harness_paths(h: Harness) -> list[str]:
