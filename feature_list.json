@@ -1278,6 +1278,35 @@
       "priority": 25,
       "activated_at": "2026-10-16T21:10:12+07:00",
       "activated_commit": "8890ff162385cce03db91e22e78785001c0107c6"
+    },
+    {
+      "id": "V026",
+      "category": "bug",
+      "behavior": "2.3.1 review round 5 (APPROVE): a continued reviewer's REJECT still counts (only its approvals are ignored); clearer no-timestamp message",
+      "verification": "python -m unittest tests.test_v2.ReviewRound4Tests.test_a_continued_reviewers_reject_still_counts -q",
+      "status": "passing",
+      "depends_on": [],
+      "evidence": {
+        "verified_at": "2026-10-16T21:49:29+07:00",
+        "commit": "e114450",
+        "command": "python -m unittest tests.test_v2.ReviewRound4Tests.test_a_continued_reviewers_reject_still_counts -q",
+        "exit_code": 0,
+        "duration_s": 13.7,
+        "project_check": "quick",
+        "output_tail": "----------------------------------------------------------------------\nRan 1 test in 13.386s\n\nOK",
+        "scope_sha256": "b9011d1a190e5813"
+      },
+      "scope": [
+        "harness_kit/*",
+        "scripts/harness.py",
+        "tests/*",
+        "package.json",
+        "docs/*",
+        "*.md"
+      ],
+      "priority": 26,
+      "activated_at": "2026-10-16T21:35:43+07:00",
+      "activated_commit": "e114450a9c64ad4338ef2e3d8ec22242c43c8c5f"
     }
   ]
 }

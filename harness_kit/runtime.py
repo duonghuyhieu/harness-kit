@@ -897,8 +897,9 @@ def review_status(h: Harness, f: dict) -> tuple[bool, str]:
     every = _read_jsonl(h.hdir / "reviews.jsonl")
     launches = {r.get("id"): r for r in every if r.get("kind") == "start"}
     recs = [r for r in every if r.get("feature") == f["id"] and r.get("kind") != "start"]
-    continued = [r for r in recs if r.get("continued")]
-    recs = [r for r in recs if not r.get("continued")]
+    # a continued reviewer can never approve, but its REJECT still counts: the conservative reading (review round 5)
+    continued = [r for r in recs if r.get("continued") and r.get("verdict") != "REJECT"]
+    recs = [r for r in recs if not r.get("continued") or r.get("verdict") == "REJECT"]
     if not recs and continued:
         return False, f"only a continued reviewer reported on {f['id']} ({continued[-1].get('note')})"
     if not recs:
@@ -3651,7 +3652,10 @@ def _authenticate_review(h: Harness, f: dict | None, payload: dict, verdict: str
         launches = [r for r in launches if float(r.get("epoch") or 0) <= started + 0.05]
     elif len([r for r in launches if r.get("id") not in used]) != 1:
         # no timestamp: only an unambiguous pairing is safe (round 4: picking the latest re-opened the overlap race)
-        return None, problem or "the transcript has no timestamp and several hk-reviewer launches match its prompt"
+        unused = len([r for r in launches if r.get("id") not in used])
+        return None, problem or ("the transcript has no timestamp and " +
+                                 ("several unused hk-reviewer launches match its prompt" if unused else
+                                  "no unused hk-reviewer launch matches its prompt"))
     else:
         launches = [r for r in launches if r.get("id") not in used]
     if not launches:

@@ -1371,6 +1371,16 @@ class ReviewRound4Tests(ReviewRound2Tests):
         self.review_stop("VERDICT: UNCERTAIN", started_at=first)  # a SendMessage follow-up to the same reviewer
         self.assertEqual(self.verify()[0], 0)
 
+    def test_a_continued_reviewers_reject_still_counts(self):
+        """Review round 5: the conservative reading — a continued reviewer cannot approve, but its REJECT counts."""
+        self.review_start()
+        first = self.last_start
+        self.review_stop("VERDICT: APPROVE")
+        self.review_stop("VERDICT: REJECT", started_at=first)
+        code, out = self.verify()
+        self.assertEqual(code, 1, out)
+        self.assertIn("REJECT", out)
+
     def test_without_timestamps_only_an_unambiguous_pairing_counts(self):
         self.review_start("Review F1.")
         self.edit_logic("\n# edited between the two launches\n")

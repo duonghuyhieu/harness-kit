@@ -330,6 +330,11 @@ with `ReviewRound4Tests` (5 tests, all failing on 8890ff1):
 - **Upgrade note:** an APPROVE recorded by 2.3.0 (no launch record) no longer counts: a feature that was active during
   the upgrade needs one fresh hk-reviewer run; `verify` says so.
 
+**Review round 5** (e114450, confirmation): **`VERDICT: APPROVE`** — five of six round-4 findings confirmed fixed; the
+0.05 s slack is unchanged and safe as long as Claude Code stamps the prompt after PreToolUse returns, as the probe
+showed. V026 adopts its conservative suggestion: a continued reviewer can never approve, but its REJECT still counts;
+and the no-timestamp message says whether several or no unused launches matched.
+
 Still out of the model, recorded for honesty: a determined agent can forge evidence with code the guard does not
 recognise (the reviewer showed obfuscation that would also need a forged launch record); the boundary for that is the
 OS sandbox and a human reading the diff.
