@@ -42,7 +42,7 @@ import sys
 import time
 from pathlib import Path
 
-VERSION = "2.2.0"
+VERSION = "2.2.1"
 STATES = ("not_started", "active", "blocked", "passing")
 STATUS_ALIASES = {"not_started": "not_started", "todo": "not_started", "planned": "not_started", "fail": "not_started",
                   "active": "active", "in_progress": "active", "blocked": "blocked",
@@ -2843,6 +2843,22 @@ def state_summary(h: Harness) -> list[str]:
     return lines
 
 
+def next_action(h: Harness) -> str:
+    """The single next step, from the feature list (cheap: no git, no checks)."""
+    feats = h.load_features()
+    active = [f for f in feats if f.get("status") == "active"]
+    if active:
+        f = active[0]
+        return (f"Next: continue {f['id']} — change only its scope, then `python scripts/harness.py verify {f['id']}`.")
+    if any(f.get("status") == "blocked" for f in feats):
+        return "Next: a feature is blocked — resolve it or record it, then `python scripts/harness.py next`."
+    for f in sorted(feats, key=lambda x: (x.get("priority", 100), feats.index(x))):
+        if f.get("status") == "not_started" and _deps_ok(f, feats):
+            return (f"Next: `python scripts/harness.py next --id {f['id']}` ({f.get('behavior')}), build it, then "
+                    f"`verify {f['id']}`.")
+    return "Next: every feature is done or waiting; add new work with `python scripts/harness.py add`."
+
+
 def cmd_hook_session_start(h: Harness, args) -> int:
     """SessionStart: put the harness state into context (lesson 03: what the agent can't see doesn't exist)."""
     payload = _hook_payload()
@@ -2855,9 +2871,13 @@ def cmd_hook_session_start(h: Harness, args) -> int:
         atomic_write(sess_p, json.dumps({"started_at": now_iso(), "head": h.git("rev-parse", "HEAD"), "ts": time.time(),
                                          "session_id": payload.get("session_id"), "via": "hook"}, indent=2))
     lines = ["## Harness state (injected by harness-kit; rules are in AGENTS.md)"] + state_summary(h)
-    lines.append("Protocol: clock in with `python scripts/harness.py start` (or /hk-start) · one feature at a time "
-                 "(WIP=1) · feature status changes only via `verify` · finish with `handoff` + `exit-check` "
-                 "(or /hk-handoff).")
+    # experiment 5b (16/10/2026): told to "clock in", agents re-ran `start` and re-read PROGRESS.md / feature_list.json
+    # every session — 31% of their tool calls — and in 8-turn sessions had no turns left to code. This block already
+    # is the clock-in: say so, and name the one next action.
+    lines.append("This state is current: you do not need `python scripts/harness.py start` or to re-read PROGRESS.md "
+                 "and feature_list.json to learn it. " + next_action(h))
+    lines.append("Rules: one feature at a time (WIP=1) · status changes only via `verify` · end with `handoff` + "
+                 "`exit-check` (or /hk-handoff).")
     snap = h.hdir / "compact-snapshot.md"
     if source == "compact" and snap.exists():
         body = snap.read_text(encoding="utf-8", errors="replace").splitlines()[:60]

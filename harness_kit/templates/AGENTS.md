@@ -17,6 +17,9 @@ Stack: {{stack_summary}}
 
 ## Session start (clock-in)
 
+In Claude Code the SessionStart hook injects this state (features, active feature, next steps, last check) at the
+start of every session: steps 1–2 are already done — skip them unless that block is missing.
+
 1. `{{h}} start` — prints the next step, recent commits, feature status, and runs the baseline check.
 2. Read `PROGRESS.md` (state + next steps) and `docs/DECISIONS.md` (why the code is the way it is).
 3. If the baseline check **fails**: fix the baseline first; do not pile new work on a broken state.

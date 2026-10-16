@@ -146,7 +146,7 @@
       {
         "name": "Instruction file ≤ 200 lines (a router, not an encyclopedia)",
         "ok": true,
-        "fix": "Split AGENTS.md (74 lines) into a router + docs/<topic>.md."
+        "fix": "Split AGENTS.md (77 lines) into a router + docs/<topic>.md."
       },
       {
         "name": "Lists verification commands",

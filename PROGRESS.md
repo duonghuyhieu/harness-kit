@@ -46,6 +46,9 @@ _Auto-updated by `harness.py handoff` at 2026-10-16T15:53:07+07:00_
   V016 stale passing features (scope content hash) · V017 Stop gate porcelain bug (found by the harness-v2 experiment
   E2: the gate never fired in 20/20 runs; reproduced on 2.1.5, fixed, regression tests). 128 tests. Commits on local
   `main` only — **not pushed** (push needs the user's approval).
+- [x] 2026-10-16: **2.2.1** V018 SessionStart names the next action instead of "clock in with `start`" (patch from the
+  harness-v2 session "harness-v2-e3", experiment 5b: clock-in ceremony took 31% of tool calls; applied here so one
+  session owns this repo). 129 tests. Local commit, not pushed.
 
 ## In Progress
 - [ ] (none)

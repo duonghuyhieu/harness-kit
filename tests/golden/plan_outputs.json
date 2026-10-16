@@ -3,7 +3,7 @@
     "create": [
       [
         "AGENTS.md",
-        "792264a148ca138b"
+        "bcbeaec5dac20632"
       ],
       [
         "PROGRESS.md",
@@ -23,7 +23,7 @@
       ],
       [
         ".harness/config.json",
-        "b86d39e9720bf6a7"
+        "08deff589e54a034"
       ],
       [
         "feature_list.json",
@@ -63,7 +63,7 @@
     "create": [
       [
         "AGENTS.md",
-        "97364a346f2b5b6d"
+        "f98dead00aaf9d2d"
       ],
       [
         "PROGRESS.md",
@@ -119,7 +119,7 @@
       ],
       [
         ".harness/config.json",
-        "b86d39e9720bf6a7"
+        "08deff589e54a034"
       ],
       [
         "feature_list.json",
@@ -159,7 +159,7 @@
     "create": [
       [
         "AGENTS.md",
-        "65014b68ce928cad"
+        "f4f09ff3da20b0d3"
       ],
       [
         "PROGRESS.md",
@@ -239,7 +239,7 @@
       ],
       [
         ".harness/config.json",
-        "b86d39e9720bf6a7"
+        "08deff589e54a034"
       ],
       [
         "feature_list.json",
@@ -279,7 +279,7 @@
     "create": [
       [
         "AGENTS.md",
-        "42b5440057384751"
+        "8d0ab3f2669415fd"
       ],
       [
         "CLAUDE.md",
@@ -339,7 +339,7 @@
       ],
       [
         ".harness/config.json",
-        "16e3991bb0d98496"
+        "19e8f6ed46f9cfb3"
       ],
       [
         "feature_list.json",
@@ -374,7 +374,7 @@
     "create": [
       [
         "AGENTS.md",
-        "03213ab3fdbcc715"
+        "41e073a0b3eb225f"
       ],
       [
         "CLAUDE.md",
@@ -434,7 +434,7 @@
       ],
       [
         ".harness/config.json",
-        "f5b836c303bfedbf"
+        "2b632b47fd6a477d"
       ],
       [
         "feature_list.json",
@@ -518,7 +518,7 @@
       ],
       [
         ".harness/config.json",
-        "f2fa5144e90279f6"
+        "f80357fb452606bf"
       ],
       [
         ".harness/rules.json",
@@ -536,7 +536,7 @@
     "proposals": [
       [
         "AGENTS.md",
-        "97364a346f2b5b6d"
+        "f98dead00aaf9d2d"
       ],
       [
         "CLAUDE.md",

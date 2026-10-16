@@ -212,3 +212,12 @@ baseline-vs-harness replication E2 (haiku, n = 20 per arm).
   missed. The unit tests never had an unstaged modification as the first line. `dirty_paths()` reads porcelain
   unstripped, lists untracked files one by one, and skips generated files. Lesson: a gate needs an end-to-end test
   through the real CLI, not only unit tests of its parts.
+
+## 2026-10-16 — 2.2.1: SessionStart names the next action instead of asking for a clock-in (V018)
+
+- Experiment 5b (harness-v2 session "harness-v2-e3", 8-turn sessions): told "clock in with `start`", harness agents
+  re-ran `start` and re-read PROGRESS.md / feature_list.json every session — 31% of their tool calls — edited the code
+  4× less and scored 26.9% vs 52.7% hidden tests (Mann–Whitney p = 0.02). The injected block already is the clock-in:
+  it now says so and names one next action (`next_action()`: continue the active feature, or `next --id <id>`). The
+  AGENTS.md template says steps 1–2 are done when the hook injected the state. Patch written by that session, applied
+  here (its test now uses a non-trivial verification, which 2.2.0 requires).

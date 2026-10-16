@@ -1046,6 +1046,35 @@
       "priority": 17,
       "activated_at": "2026-10-16T15:37:28+07:00",
       "activated_commit": "3dbdd7b060cab75d428c31c8b6825d6246d5d0f0"
+    },
+    {
+      "id": "V018",
+      "category": "feature",
+      "behavior": "2.2.1: SessionStart says its state block is current and names the one next action (continue the active feature, or next --id <id>) instead of 'clock in with start'; the AGENTS.md template says steps 1-2 are done when the hook injected the state (experiment 5b: clock-in ceremony took 31% of tool calls)",
+      "verification": "python -m unittest tests.test_v2.ClaudeHookTests.test_session_start_names_the_next_action_instead_of_a_clock_in -q",
+      "status": "passing",
+      "depends_on": [],
+      "evidence": {
+        "verified_at": "2026-10-16T16:24:52+07:00",
+        "commit": "b5d4db6",
+        "command": "python -m unittest tests.test_v2.ClaudeHookTests.test_session_start_names_the_next_action_instead_of_a_clock_in -q",
+        "exit_code": 0,
+        "duration_s": 1.2,
+        "project_check": "quick",
+        "output_tail": "----------------------------------------------------------------------\nRan 1 test in 1.063s\n\nOK",
+        "scope_sha256": "d959342f7345a3e5"
+      },
+      "scope": [
+        "harness_kit/*",
+        "scripts/harness.py",
+        "tests/*",
+        "package.json",
+        "docs/*",
+        "*.md"
+      ],
+      "priority": 18,
+      "activated_at": "2026-10-16T16:16:28+07:00",
+      "activated_commit": "b5d4db65e9015b23bd54ec3459a31cb56310caa0"
     }
   ]
 }

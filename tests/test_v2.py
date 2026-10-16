@@ -243,6 +243,17 @@ class ClaudeHookTests(unittest.TestCase):
         self.assertNotEqual(code, 0)
         self.assertIn("unknown key `bogus_key`", out)
 
+    def test_session_start_names_the_next_action_instead_of_a_clock_in(self):
+        """Experiment 5b: "clock in with start" made agents spend 31% of their calls re-reading state they already had."""
+        run_rt(self.root, "add", "--id", "F1", "--behavior", "first thing", "--verify", OK_VERIFY, "--scope", "app/*",
+               "--priority", "1")
+        ctx = hook_output(run_dispatcher(self.root, "session-start", {"source": "startup"})[1])["additionalContext"]
+        self.assertIn("you do not need `python scripts/harness.py start`", ctx)
+        self.assertRegex(ctx, r"Next: `python scripts/harness.py next --id (H001|F1)`")
+        run_rt(self.root, "next", "--id", "F1")
+        ctx = hook_output(run_dispatcher(self.root, "session-start", {"source": "resume"})[1])["additionalContext"]
+        self.assertIn("Next: continue F1", ctx)
+
     def test_generated_files_are_never_scope_drift(self):
         """Experiment 4: a loop commit tracked __pycache__; the next test run changed the .pyc and blocked a feature."""
         self.assertTrue(runtime.is_generated("src/pkg/__pycache__/mod.cpython-312.pyc"))
