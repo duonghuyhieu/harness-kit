@@ -1104,6 +1104,35 @@
       "priority": 19,
       "activated_at": "2026-10-16T16:36:08+07:00",
       "activated_commit": "1a0930f1748f200c197746d190b61ebdb2c2d174"
+    },
+    {
+      "id": "V020",
+      "category": "feature",
+      "behavior": "2.3.0: incident ledger — bypassed or exhausted gates (verify --no-review, the Stop gate letting a turn end with problems still open, a session ending with unverified or un-handed-off changes) are appended to .harness/incidents.jsonl; SessionStart shows the incidents since the previous session and warns when --no-review covers >= 25% of recent verifies",
+      "verification": "python -m unittest tests.test_v2.IncidentTests -q",
+      "status": "passing",
+      "depends_on": [],
+      "evidence": {
+        "verified_at": "2026-10-16T16:58:56+07:00",
+        "commit": "8b488f3",
+        "command": "python -m unittest tests.test_v2.IncidentTests -q",
+        "exit_code": 0,
+        "duration_s": 7.7,
+        "project_check": "quick",
+        "output_tail": "----------------------------------------------------------------------\nRan 2 tests in 7.027s\n\nOK",
+        "scope_sha256": "a8235f23f7e98a81"
+      },
+      "scope": [
+        "harness_kit/*",
+        "scripts/harness.py",
+        "tests/*",
+        "package.json",
+        "docs/*",
+        "*.md"
+      ],
+      "priority": 20,
+      "activated_at": "2026-10-16T16:50:27+07:00",
+      "activated_commit": "8b488f3bad72741acf82c50574400b105a2fe80a"
     }
   ]
 }

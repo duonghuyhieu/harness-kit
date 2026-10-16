@@ -1374,18 +1374,8 @@ def cmd_failures(h: Harness, args) -> int:
     return 0
 
 
-def cmd_hook_stop(h: Harness, args) -> int:
-    """Claude Code Stop hook. Cheap, deterministic checks only (no test run): exit 2 + stderr blocks the stop."""
-    if os.environ.get("HARNESS_STOP_HOOK", "on").lower() in ("off", "0", "false"):
-        return 0
-    payload = {}
-    try:
-        raw = _stdin_text()
-        payload = json.loads(raw) if raw.strip() else {}
-    except (ValueError, OSError):
-        payload = {}
-    if payload.get("stop_hook_active"):  # already continued once because of this hook: never loop
-        return 0
+def stop_problems(h: Harness) -> list[str]:
+    """What the Stop gate blocks on. Cheap, deterministic checks only (no test run)."""
     sess_p = h.hdir / "session.json"
     session = json.loads(sess_p.read_text(encoding="utf-8")) if sess_p.exists() else {}
     problems = [e for e in validate_features(h)
@@ -1397,6 +1387,24 @@ def cmd_hook_stop(h: Harness, args) -> int:
             if f.get("status") == "active" and scope_drift(h, f):
                 problems.append(f"changes outside {f['id']}'s scope: {', '.join(scope_drift(h, f)[:5])}")
     problems += unverified_changes(h)
+    return problems
+
+
+def cmd_hook_stop(h: Harness, args) -> int:
+    """Claude Code Stop hook. Cheap, deterministic checks only (no test run): exit 2 + stderr blocks the stop."""
+    if os.environ.get("HARNESS_STOP_HOOK", "on").lower() in ("off", "0", "false"):
+        return 0
+    payload = {}
+    try:
+        raw = _stdin_text()
+        payload = json.loads(raw) if raw.strip() else {}
+    except (ValueError, OSError):
+        payload = {}
+    problems = stop_problems(h)
+    if payload.get("stop_hook_active"):  # already continued once because of this hook: never loop
+        if problems:  # the gate let the turn end with problems still open: visible at the next session start
+            record_incident(h, "stop-gate-exhausted", "; ".join(problems)[:500], session=payload.get("session_id"))
+        return 0
     h.trace("hook-stop", "block" if problems else "allow", problems=len(problems), session=payload.get("session_id"))
     if not problems:
         return 0
@@ -2982,6 +2990,8 @@ def cmd_hook_session_start(h: Harness, args) -> int:
     if not (h.hdir / "config.json").exists():
         return 0
     source = payload.get("source", "startup")
+    previous = _read_json(h.hdir / "session.json", {})
+    previous_start = float(previous.get("ts") or 0) if isinstance(previous, dict) else 0.0
     if source == "startup":  # an automatic clock-in record, so exit-check can tell whether PROGRESS.md was updated
         sess_p = h.hdir / "session.json"
         h.hdir.mkdir(exist_ok=True)
@@ -2995,6 +3005,8 @@ def cmd_hook_session_start(h: Harness, args) -> int:
                  "and feature_list.json to learn it. " + next_action(h))
     lines.append("Rules: one feature at a time (WIP=1) · status changes only via `verify` · end with `handoff` + "
                  "`exit-check` (or /hk-handoff).")
+    if source in ("startup", "clear"):
+        lines += incident_lines(h, previous_start)
     snap = h.hdir / "compact-snapshot.md"
     if source == "compact" and snap.exists():
         body = snap.read_text(encoding="utf-8", errors="replace").splitlines()[:60]
@@ -3269,9 +3281,34 @@ def cmd_hook_session_end(h: Harness, args) -> int:
     session = _read_json(h.hdir / "session.json", {})
     prog = h.path("progress_file")
     handed_off = bool(session) and prog.exists() and prog.stat().st_mtime >= session.get("ts", 0)
-    h.trace("session-end", "ok", reason=payload.get("reason"), handoff=handed_off,
-            files=len(session_files(h, payload.get("session_id"))))
+    files = session_files(h, payload.get("session_id"))
+    h.trace("session-end", "ok", reason=payload.get("reason"), handoff=handed_off, files=len(files))
+    unverified = unverified_changes(h)
+    if unverified:  # SessionEnd cannot block: leave it for the next session start
+        record_incident(h, "session-ended-unverified", "; ".join(unverified)[:500], session=payload.get("session_id"))
+    elif files and not handed_off:
+        record_incident(h, "session-ended-without-handoff",
+                        f"{len(files)} file(s) changed ({', '.join(files[:5])}) and {h.cfg['progress_file']} was not "
+                        f"updated", session=payload.get("session_id"))
     return 0
+
+
+def incident_lines(h: Harness, since: float) -> list[str]:
+    """SessionStart banner: gates bypassed or exhausted since `since`, and a warning when `--no-review` is routine."""
+    recs = _read_jsonl(h.hdir / "incidents.jsonl")
+    new = [r for r in recs if float(r.get("epoch") or 0) > since]
+    out = []
+    if new:
+        out.append(f"## Incidents since the last session ({len(new)}) — gates that were bypassed or ran out; check them")
+        out += [f"- {r.get('kind')}: {str(r.get('detail', ''))[:200]}" for r in new[-3:]]
+    trace = [json.loads(l) for l in (h.hdir / "trace.jsonl").read_text(encoding="utf-8", errors="replace").splitlines()[-500:]
+             if l.strip().startswith("{")] if (h.hdir / "trace.jsonl").exists() else []
+    passes = sum(1 for e in trace if e.get("cmd") == "verify" and e.get("result") == "pass")
+    skips = sum(1 for r in recs[-50:] if r.get("kind") == "no-review")
+    if skips >= 3 and skips >= 0.25 * max(passes, 1):
+        out.append(f"WARNING: {skips} recent verifies skipped the review (`--no-review`) — the review gate is being "
+                   f"routinely bypassed; ask the user whether that is intended.")
+    return out
 
 
 def cmd_statusline(h: Harness, args) -> int:

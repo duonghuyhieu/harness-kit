@@ -10,6 +10,7 @@ import re
 import subprocess
 import sys
 import tempfile
+import time
 import unittest
 from pathlib import Path
 
@@ -880,6 +881,59 @@ class ReviewGateTests(HarnessProjectCase):
             settings = json.loads((fresh / ".claude/settings.json").read_text(encoding="utf-8"))
             self.assertIn("SubagentStop", settings["hooks"])
         self.assertEqual(runtime.DEFAULT_CONFIG["review_gate"], "warn")  # projects without the hook are not blocked
+
+
+class IncidentTests(HarnessProjectCase):
+    """V020: gates that were bypassed or ran out are recorded and shown at the next session start."""
+
+    def setUp(self):
+        super().setUp()
+        git(self.root, "add", "-A")
+        git(self.root, "commit", "-qm", "harness installed")
+
+    def incidents(self) -> list[dict]:
+        p = self.root / ".harness" / "incidents.jsonl"
+        return [json.loads(l) for l in p.read_text(encoding="utf-8").splitlines()] if p.exists() else []
+
+    def start(self, session: str, source: str = "startup") -> str:
+        out = run_dispatcher(self.root, "session-start", {"source": source, "session_id": session})[1]
+        return hook_output(out)["additionalContext"]
+
+    def test_exhausted_stop_gate_and_unclean_session_end_are_recorded_and_shown_once(self):
+        self.assertNotIn("Incidents", self.start("s1"))
+        run_rt(self.root, "add", "--id", "F1", "--behavior", "b", "--verify", OK_VERIFY, "--scope", "app/*")
+        run_rt(self.root, "next", "--id", "F1")
+        logic = self.root / "app" / "core" / "logic.py"
+        logic.write_text(logic.read_text(encoding="utf-8") + "\ndef g():\n    return 2\n", encoding="utf-8")
+        self.assertEqual(run_dispatcher(self.root, "stop", {"session_id": "s1"})[0], 2)  # blocks once
+        self.assertEqual(self.incidents(), [])
+        self.assertEqual(run_dispatcher(self.root, "stop", {"session_id": "s1", "stop_hook_active": True})[0], 0)
+        self.assertEqual([i["kind"] for i in self.incidents()], ["stop-gate-exhausted"])
+        run_dispatcher(self.root, "session-end", {"session_id": "s1", "reason": "other"})
+        self.assertEqual([i["kind"] for i in self.incidents()], ["stop-gate-exhausted", "session-ended-unverified"])
+        ctx = self.start("s2")
+        self.assertIn("Incidents since the last session (2)", ctx)
+        self.assertIn("stop-gate-exhausted", ctx)
+        self.assertNotIn("Incidents", self.start("s3"))  # shown once, at the session after them
+
+    def test_session_end_without_handoff_and_routine_no_review(self):
+        self.start("s1")
+        run_dispatcher(self.root, "activity", {"session_id": "s1", "tool_name": "Write",
+                                               "tool_input": {"file_path": str(self.root / "README.md")}})
+        (self.root / "README.md").write_text("changed\n", encoding="utf-8")
+        run_dispatcher(self.root, "session-end", {"session_id": "s1"})
+        self.assertEqual([i["kind"] for i in self.incidents()], ["session-ended-without-handoff"])
+        self.start("s2")
+        run_dispatcher(self.root, "activity", {"session_id": "s2", "tool_name": "Write",
+                                               "tool_input": {"file_path": str(self.root / "README.md")}})
+        time.sleep(0.05)
+        (self.root / "PROGRESS.md").write_text("# Progress\nhanded off\n", encoding="utf-8")
+        run_dispatcher(self.root, "session-end", {"session_id": "s2"})
+        self.assertEqual(len(self.incidents()), 1)  # a handed-off session is not an incident
+        h = runtime.Harness(self.root)
+        for i in range(3):
+            runtime.record_incident(h, "no-review", f"verify F{i} without an approved review: offline")
+        self.assertIn("recent verifies skipped the review", self.start("s3"))
 
 
 if __name__ == "__main__":
