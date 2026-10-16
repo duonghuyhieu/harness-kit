@@ -81,7 +81,7 @@ Ba quy tắc cốt lõi:
 |---|---|
 | SessionStart | tiêm trạng thái: số feature, VCR, feature active + lệnh verify, bước tiếp, lần check gần nhất; sau compaction tiêm thêm snapshot |
 | UserPromptSubmit | nhắc 1 dòng khi có feature active (chống lặp 10 phút) |
-| PreToolUse | **chặn** sửa tay trạng thái harness, sửa cách chấm của feature đã bắt đầu (`verification`, `scope`, `activated_commit`) và id trùng; **hỏi** trước khi ghi ngoài scope của feature active và trước khi sửa cấu hình của chính harness (`<project>/.harness/config.json`, `<project>/.claude/settings.json`); không bao giờ tự "allow" |
+| PreToolUse | **chặn** sửa tay trạng thái harness, sửa cách chấm của feature đã bắt đầu (`verification`, `scope`, `activated_commit`) và id trùng; **hỏi** trước khi ghi ngoài scope của feature active và trước khi sửa cấu hình của chính harness (`<project>/.harness/config.json`, `<project>/.claude/settings.json`); **luôn chặn** các cách tắt hook (`git commit --no-verify`/`-n`, `core.hooksPath`, `GIT_CONFIG_*`, `claude --safe-mode`/`--bare`, `CLAUDE_CONFIG_DIR`, `disableAllHooks`); **hỏi** trước khi làm yếu "thước đo" — sửa cấu hình lint/test/CI, `.harness/rules.json`, bỏ assertion hoặc thêm skip trong file test, xóa test (`checker_guard`); không bao giờ tự "allow" |
 | PostToolUse | ghi lại tệp/lệnh phiên đã chạm vào `.harness/activity.jsonl` |
 | PreCompact | ghi `<project>/.harness/compact-snapshot.md` trước khi nén ngữ cảnh |
 | Stop | chặn kết thúc lượt khi còn debug code, file rác, feature list bị sửa tay (không chặn hai lần liên tiếp) |

@@ -742,5 +742,44 @@ class StalePassTests(HarnessProjectCase):
         self.assertIn("F2", run_rt(self.root, "status")[1].split("Stale:")[-1])
 
 
+class PorcelainTests(HarnessProjectCase):
+    """V017: the Stop gate sees an unverified change even when it is the first `git status --porcelain` line
+    (an unstaged modification, which `git()`'s strip() used to mangle) — the case of a one-file change."""
+
+    def setUp(self):
+        super().setUp()
+        git(self.root, "add", "-A")
+        git(self.root, "commit", "-qm", "harness installed")
+        run_rt(self.root, "add", "--id", "F1", "--behavior", "b", "--verify", OK_VERIFY, "--scope", "app/*")
+        run_rt(self.root, "next", "--id", "F1")
+
+    def stop(self) -> tuple[int, str]:
+        code, _, err = run_dispatcher(self.root, "stop", {"session_id": "s1"})
+        return code, err
+
+    def test_single_unstaged_change_blocks_the_stop_once(self):
+        self.assertEqual([p for p in runtime.Harness(self.root).dirty_paths() if p.startswith("app/")], [])
+        logic = self.root / "app" / "core" / "logic.py"
+        logic.write_text(logic.read_text(encoding="utf-8") + "\ndef g():\n    return 2\n", encoding="utf-8")
+        self.assertIn("app/core/logic.py", runtime.Harness(self.root).dirty_paths())
+        code, err = self.stop()
+        self.assertEqual(code, 2, err)
+        self.assertIn("F1 has changes not verified", err)
+        self.assertIn("app/core/logic.py", err)
+        code, _, _ = run_dispatcher(self.root, "stop", {"session_id": "s1", "stop_hook_active": True})
+        self.assertEqual(code, 0)  # blocks once, never loops
+
+    def test_new_file_in_a_new_folder_counts_and_bytecode_does_not(self):
+        cache = self.root / "app" / "__pycache__"
+        cache.mkdir()
+        (cache / "logic.cpython-312.pyc").write_bytes(b"\0")
+        self.assertEqual(self.stop()[0], 0)  # generated files are never someone's work
+        (self.root / "app" / "extra").mkdir()
+        (self.root / "app" / "extra" / "x.py").write_text("x = 1\n", encoding="utf-8")
+        code, err = self.stop()
+        self.assertEqual(code, 2, err)
+        self.assertIn("app/extra/x.py", err)
+
+
 if __name__ == "__main__":
     unittest.main()

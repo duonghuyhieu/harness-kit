@@ -191,3 +191,24 @@
   the .pyc and `_loop_drift` blocked two correct features as "changed files outside the scope", which stopped the
   dependent features. Bytecode, `.class` and files under SKIP_DIRS are now never scope drift.
 - A reviewer prefixed its commands with `cd /d "…" &&` and was denied: both prompts now say they run in the project root.
+
+## 2026-10-16 — 2.2.0: gate integrity (V014–V017)
+
+Source: a survey of 17 open-source harness repositories (research repo, `reports/`), and the pre-registered
+baseline-vs-harness replication E2 (haiku, n = 20 per arm).
+- V014: `add`, `verify` and `validate` refuse a verification command that cannot fail (only prints / cd / exit 0,
+  `|| true`, a trailing `; exit 0`, a pipe into tail/tee without pipefail). Deterministic patterns only — a guardrail,
+  not a proof (`python -c "assert True"` still passes). `trivial_verification: warn` for projects that need it.
+  Test fixtures that used `python -c pass` as a verification now use a real assertion.
+- V015: the guard denies hook bypasses in every configuration (switching checks off is the user's action) and asks
+  before edits that weaken the checker. Edits are judged by their changed lines (sections of pyproject/setup.cfg,
+  script keys of package.json, assertion and skip counts in test files), so ordinary edits of those files pass.
+- V016: `verify` records a content hash of the scope files; status/SessionStart/exit-check list stale passing
+  features. A content hash, not a commit, because the feature's own commit lands after `verify`. Projects with broad,
+  shared scopes (this repo) see many stale features after any change: that is accurate, `check --full` clears it.
+- V017: E2 found the Stop gate never fired in 20/20 harness runs: `Harness.git()` strips its output, so the first
+  porcelain line (" M" + path) lost its leading space and `[3:]` cut the first letter of the path — outside the
+  scope — and the one-file change of every run was
+  missed. The unit tests never had an unstaged modification as the first line. `dirty_paths()` reads porcelain
+  unstripped, lists untracked files one by one, and skips generated files. Lesson: a gate needs an end-to-end test
+  through the real CLI, not only unit tests of its parts.

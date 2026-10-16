@@ -42,7 +42,7 @@ import sys
 import time
 from pathlib import Path
 
-VERSION = "2.1.5"
+VERSION = "2.2.0"
 STATES = ("not_started", "active", "blocked", "passing")
 STATUS_ALIASES = {"not_started": "not_started", "todo": "not_started", "planned": "not_started", "fail": "not_started",
                   "active": "active", "in_progress": "active", "blocked": "blocked",
@@ -206,6 +206,25 @@ class Harness:
             return out.stdout.strip() if out.returncode == 0 else ""
         except (OSError, subprocess.SubprocessError):
             return ""
+
+    def dirty_paths(self) -> list[str]:
+        """Paths of `git status --porcelain`. Not through `git()`: its strip() removed the leading space of the first
+        line, so ' M src/x.py' became 'M src/x.py' and `[3:]` read 'rc/x.py' — the Stop gate then missed the most
+        common unverified change (found by the baseline-vs-harness experiment, 2026-10-16)."""
+        try:
+            out = subprocess.run(["git", "status", "--porcelain", "--untracked-files=all"], cwd=self.root,
+                                 capture_output=True, text=True, encoding="utf-8", errors="replace", timeout=60)
+        except (OSError, subprocess.SubprocessError):
+            return []
+        if out.returncode != 0:
+            return []
+        paths = []
+        for line in out.stdout.splitlines():  # "XY path" or "XY old -> new"; files, not untracked folders
+            if len(line) > 3 and line[2] == " ":
+                rel = line[3:].split(" -> ")[-1].strip().strip('"')
+                if rel and not is_generated(rel):
+                    paths.append(rel)
+        return paths
 
     def head(self) -> str:
         return self.git("rev-parse", "--short", "HEAD")
@@ -1062,8 +1081,7 @@ def _exit_check_hygiene(h: Harness, session: dict, problems: list[str], warnings
             if drift:
                 (problems if h.cfg.get("scope_drift") == "error" else warnings).append(
                     f"{len(drift)} changed file(s) outside {f['id']}'s scope: {', '.join(drift[:10])}")
-    dirty = [l for l in h.git("status", "--porcelain").splitlines()
-             if not l[3:].startswith(".harness/") or l[3:].startswith(".harness/config")]
+    dirty = [rel for rel in h.dirty_paths() if not rel.startswith(".harness/") or rel.startswith(".harness/config")]
     if dirty:
         warnings.append(f"{len(dirty)} uncommitted file(s) — commit the verified work, or record the WIP in PROGRESS.md.")
 
@@ -1308,8 +1326,7 @@ def unverified_changes(h: Harness) -> list[str]:
     feats = h.load_features()
     active = [f for f in feats if f.get("status") == "active"]
     dirty = []
-    for line in h.git("status", "--porcelain").splitlines():
-        rel = line[3:].strip().strip('"').split(" -> ")[-1]
+    for rel in h.dirty_paths():
         if rel and not rel.startswith((".harness/", ".claude/")) and rel not in (h.cfg["feature_list"],
                                                                                h.cfg["progress_file"]):
             dirty.append(rel)

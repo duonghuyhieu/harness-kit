@@ -7,13 +7,13 @@
 
 ## Current State
 <!-- harness:auto:start -->
-_Auto-updated by `harness.py handoff` at 2026-10-15T22:21:07+07:00_
-- Branch / commit: `main` @ `5563912 fix: 2.0.1 — fixes from independent code, end-to-end and docs reviews (V007)`
-- Last check: PASS (quick, 2026-10-15T22:20:55+07:00, @5563912)
-- Features: 27/27 passing, VCR 1.0
+_Auto-updated by `harness.py handoff` at 2026-10-16T15:53:07+07:00_
+- Branch / commit: `main` @ `3dbdd7b feat: V016 — report passing features whose scope changed since they passed`
+- Last check: PASS (quick, 2026-10-16T15:52:58+07:00, @3dbdd7b)
+- Features: 36/36 passing, VCR 1.0
 - Active: none
 - Blocked: none
-- Uncommitted changes: 21 file(s)
+- Uncommitted changes: 10 file(s)
 <!-- harness:auto:end -->
 
 ## Done
@@ -41,6 +41,11 @@ _Auto-updated by `harness.py handoff` at 2026-10-15T22:21:07+07:00_
     features, duplicate ids, repairable feature list, narrowed allow list (`try`/`verify`/`setup`/`loop` prompt), `ask`
     on harness config, unmanaged runtime kept, quiet re-install, first-time-only postinstall, install.ps1 in a script
     block; 105 tests (6 new regressions, each confirmed to fail on 2.0.0); details in docs/DECISIONS.md
+- [x] 2026-10-16: **2.2.0 gate integrity** (plan: harness-v2 `reports/Kế hoạch cải tiến sau khảo sát.md`, release 2.2):
+  V014 trivial verification commands refused · V015 guard denies hook bypasses, asks before weakening the checker ·
+  V016 stale passing features (scope content hash) · V017 Stop gate porcelain bug (found by the harness-v2 experiment
+  E2: the gate never fired in 20/20 runs; reproduced on 2.1.5, fixed, regression tests). 128 tests. Commits on local
+  `main` only — **not pushed** (push needs the user's approval).
 
 ## In Progress
 - [ ] (none)

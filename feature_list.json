@@ -1017,6 +1017,35 @@
       "priority": 16,
       "activated_at": "2026-10-16T15:31:00+07:00",
       "activated_commit": "af4c209910b0b91820e4313051330332410170de"
+    },
+    {
+      "id": "V017",
+      "category": "bug",
+      "behavior": "2.2.0: the Stop gate sees an unverified change when it is the first line of git status --porcelain (Harness.git stripped the leading space, so ' M src/x.py' was read as 'rc/x.py' and the change was missed); exit-check counts uncommitted harness files correctly",
+      "verification": "python -m unittest tests.test_v2.PorcelainTests -q",
+      "status": "passing",
+      "depends_on": [],
+      "evidence": {
+        "verified_at": "2026-10-16T15:52:58+07:00",
+        "commit": "3dbdd7b",
+        "command": "python -m unittest tests.test_v2.PorcelainTests -q",
+        "exit_code": 0,
+        "duration_s": 4.2,
+        "project_check": "quick",
+        "output_tail": "----------------------------------------------------------------------\nRan 2 tests in 3.565s\n\nOK",
+        "scope_sha256": "452b06e9b193749b"
+      },
+      "scope": [
+        "harness_kit/*",
+        "scripts/harness.py",
+        "tests/*",
+        "package.json",
+        "docs/*",
+        "*.md"
+      ],
+      "priority": 17,
+      "activated_at": "2026-10-16T15:37:28+07:00",
+      "activated_commit": "3dbdd7b060cab75d428c31c8b6825d6246d5d0f0"
     }
   ]
 }
