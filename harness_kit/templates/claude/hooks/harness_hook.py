@@ -28,6 +28,7 @@ EVENTS = {
     "precompact": "hook-precompact",
     "stop": "hook-stop",
     "session-end": "hook-session-end",
+    "subagent-stop": "hook-subagent-stop",
     "statusline": "statusline",
 }
 

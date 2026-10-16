@@ -123,6 +123,7 @@
   "verify_fail_third_attempt": {
     "rc": 1,
     "out": [
+      "WARNING: no hk-reviewer verdict has been recorded for X. Run the hk-reviewer subagent on the change before `verify` (review_gate: warn — `require` makes this an error).",
       "== verify X: \"<PY>\" -c \"raise SystemExit(3)\"",
       "",
       "[FAIL] X is still active (attempt 3). Fix it and verify again. Tried ≥3 times: change your approach, or `block` it and record the reason."
@@ -168,6 +169,7 @@
   "verify_pass": {
     "rc": 0,
     "out": [
+      "WARNING: no hk-reviewer verdict has been recorded for X. Run the hk-reviewer subagent on the change before `verify` (review_gate: warn — `require` makes this an error).",
       "== verify X: \"<PY>\" -c \"assert 1 + 1 == 2\"",
       "",
       "== verification command passed; running the project-wide quick check to rule out regressions ==",
@@ -287,6 +289,7 @@
   "verify_drift_warn": {
     "rc": 0,
     "out": [
+      "WARNING: no hk-reviewer verdict has been recorded for X. Run the hk-reviewer subagent on the change before `verify` (review_gate: warn — `require` makes this an error).",
       "== verify X: \"<PY>\" -c \"assert 1 + 1 == 2\"",
       "",
       "WARNING: 1 changed file(s) outside X's scope ['app/core/*']: app/other.py",
@@ -360,6 +363,7 @@
   "verify_drift_error": {
     "rc": 1,
     "out": [
+      "WARNING: no hk-reviewer verdict has been recorded for X. Run the hk-reviewer subagent on the change before `verify` (review_gate: warn — `require` makes this an error).",
       "== verify X: \"<PY>\" -c \"assert 1 + 1 == 2\"",
       "",
       "ERROR: 1 changed file(s) outside X's scope ['app/core/*']: app/other.py",
@@ -407,6 +411,7 @@
   "verify_project_check_fails": {
     "rc": 1,
     "out": [
+      "WARNING: no hk-reviewer verdict has been recorded for X. Run the hk-reviewer subagent on the change before `verify` (review_gate: warn — `require` makes this an error).",
       "== verify X: \"<PY>\" -c \"assert 1 + 1 == 2\"",
       "",
       "== verification command passed; running the project-wide quick check to rule out regressions ==",
@@ -470,6 +475,7 @@
   "verify_skip_check": {
     "rc": 0,
     "out": [
+      "WARNING: no hk-reviewer verdict has been recorded for X. Run the hk-reviewer subagent on the change before `verify` (review_gate: warn — `require` makes this an error).",
       "== verify X: \"<PY>\" -c \"assert 1 + 1 == 2\"",
       "",
       "[PASS] X → passing. Commit the work, update PROGRESS.md, then run `next`."

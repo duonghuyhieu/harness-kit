@@ -91,6 +91,8 @@ DEFAULT_CONFIG = {
     "trivial_verification": "refuse",
     # edits that weaken the checker (lint/test/CI config; assertions removed or skips added in tests): "ask" | "off"
     "checker_guard": "ask",
+    # `verify` needs an hk-reviewer APPROVE on the current change: "require" (Claude Code installs), "warn" or "off"
+    "review_gate": "warn",
     # dispatcher events switched off for this project, e.g. ["prompt"]; switching off "guard" or "stop" is logged
     "hooks_off": [],
     "activity_max_lines": 2000,
@@ -790,6 +792,118 @@ def stale_features(h: Harness, feats: list[dict] | None = None) -> list[str]:
     return out
 
 
+def review_fingerprint(h: Harness, f: dict) -> str:
+    """Content hash of what the feature changed: every file changed since its activation commit (committed or not, so
+    a commit between review and verify changes nothing), harness bookkeeping (`scope_exempt`) and generated files
+    left out. A review is valid only for the exact content it saw."""
+    exempt = list(h.cfg.get("scope_exempt", []))
+    digest = hashlib.sha256()
+    for rel in changed_files(h, f.get("activated_commit", "")):
+        if any(fnmatch.fnmatch(rel, g) for g in exempt):
+            continue
+        p = h.root / rel
+        try:
+            blob = hashlib.sha256(p.read_bytes().replace(b"\r\n", b"\n")).hexdigest() if p.is_file() else "deleted"
+        except OSError:
+            blob = "unreadable"
+        digest.update(f"{rel}\0{blob}\n".encode("utf-8"))
+    return digest.hexdigest()[:16]
+
+
+VERDICTS = {"APPROVE": "APPROVE", "PASS": "APPROVE", "REJECT": "REJECT", "FAIL": "REJECT", "UNCERTAIN": "UNCERTAIN"}
+
+
+def parse_verdict(text: str) -> str:
+    """The reviewer's verdict: the last `VERDICT: APPROVE|REJECT|UNCERTAIN` line (PASS/FAIL accepted), else the line
+    under a `## Verdict` heading. No readable verdict is UNCERTAIN — never an approval."""
+    lines = [l.strip().strip("*`_ ") for l in str(text or "").splitlines()]
+    for line in reversed(lines):
+        m = re.match(r"^verdict\W*(approve|reject|uncertain|pass|fail)\b", line, re.I)
+        if m and "|" not in line:
+            return VERDICTS[m.group(1).upper()]
+    for i, line in enumerate(lines):
+        if re.match(r"^#+\s*verdict\s*$", line, re.I):
+            nxt = next((l for l in lines[i + 1:] if l), "")
+            m = re.match(r"^(approve|reject|uncertain|pass|fail)\b", nxt, re.I)
+            if m and "|" not in nxt:
+                return VERDICTS[m.group(1).upper()]
+    return "UNCERTAIN"
+
+
+def record_review(h: Harness, f: dict | None, verdict: str, source: str, **extra) -> dict:
+    rec = {"ts": now_iso(), "epoch": time.time(), "feature": f["id"] if f else None, "verdict": verdict,
+           "fingerprint": review_fingerprint(h, f) if f else None, "source": source, **extra}
+    h.hdir.mkdir(exist_ok=True)
+    with (h.hdir / "reviews.jsonl").open("a", encoding="utf-8") as fh:
+        fh.write(json.dumps(rec, ensure_ascii=False) + "\n")
+    h.trace("review", verdict, feature=rec["feature"], source=source)
+    return rec
+
+
+def _read_jsonl(p: Path) -> list[dict]:
+    out = []
+    if p.exists():
+        for line in p.read_text(encoding="utf-8", errors="replace").splitlines():
+            try:
+                rec = json.loads(line)
+            except ValueError:
+                continue
+            if isinstance(rec, dict):
+                out.append(rec)
+    return out
+
+
+def review_status(h: Harness, f: dict) -> tuple[bool, str]:
+    """(approved for the current content, explanation)."""
+    recs = [r for r in _read_jsonl(h.hdir / "reviews.jsonl") if r.get("feature") == f["id"]]
+    if not recs:
+        return False, f"no hk-reviewer verdict has been recorded for {f['id']}"
+    fp = review_fingerprint(h, f)
+    current = [r for r in recs if r.get("fingerprint") == fp]
+    if current and current[-1].get("verdict") == "APPROVE":
+        return True, f"approved by {current[-1].get('source', 'a reviewer')} at {current[-1].get('ts')}"
+    if current:
+        return False, f"the latest review of the current change is {current[-1].get('verdict')}"
+    return False, (f"the code changed after the last review ({recs[-1].get('verdict')} at {recs[-1].get('ts')}): "
+                   f"a review covers only the exact content it saw")
+
+
+def record_incident(h: Harness, kind: str, detail: str, **extra) -> None:
+    """A gate that was bypassed or exhausted: shown at the next session start (V020)."""
+    h.hdir.mkdir(exist_ok=True)
+    rec = {"ts": now_iso(), "epoch": time.time(), "kind": kind, "detail": detail[:500], **extra}
+    with (h.hdir / "incidents.jsonl").open("a", encoding="utf-8") as fh:
+        fh.write(json.dumps(rec, ensure_ascii=False) + "\n")
+    h.trace("incident", kind, detail=detail[:200])
+
+
+def _review_gate(h: Harness, f: dict, args) -> bool:
+    """True when `verify` may continue. `review_gate`: require | warn | off; `--no-review <reason>` overrides
+    `require` and is recorded as an incident."""
+    mode = h.cfg.get("review_gate", "warn")
+    if mode == "off":
+        return True
+    ok, why = review_status(h, f)
+    if ok:
+        print(f"== review: {why}")
+        return True
+    reason = getattr(args, "no_review", None)
+    if reason:
+        record_incident(h, "no-review", f"verify {f['id']} without an approved review: {reason}", feature=f["id"])
+        print(f"WARNING: {why}; verifying without it (--no-review: {reason}) — recorded in .harness/incidents.jsonl.")
+        return True
+    if mode == "warn":
+        print(f"WARNING: {why}. Run the hk-reviewer subagent on the change before `verify` "
+              f"(review_gate: warn — `require` makes this an error).")
+        return True
+    h.trace("verify", "fail", feature=f["id"], reason="no approved review")
+    print(f"ERROR: {why}.\n  WHY: done means an independent review approved exactly this change (maker–checker).\n"
+          f"  FIX: run the hk-reviewer subagent on {f['id']} and fix what it reports until it ends with "
+          f"`VERDICT: APPROVE`, then verify again. Only if a review is impossible: `verify {f['id']} --no-review "
+          f"\"<reason>\"` (recorded as an incident).")
+    return False
+
+
 def _stale_line(stale: list[str]) -> str:
     more = f" (+{len(stale) - 8} more)" if len(stale) > 8 else ""
     return (f"Stale: {len(stale)} passing feature(s) changed since they last passed — {', '.join(stale[:8])}{more}; "
@@ -890,6 +1004,8 @@ def cmd_verify(h: Harness, args) -> int:
         print(f"{f['id']} is already passing (state transitions are one-way). Use `check --full` to run regressions.")
         return 0
     ver = _require_verifiable(f, h)
+    if not _review_gate(h, f, args):
+        return 1
     print(f"== verify {f['id']}: {ver}")
     code, out, dur = h.run_shell(ver, f.get("cwd", "."))
     print(tail(out, 30))
@@ -2297,6 +2413,7 @@ def _loop_feature(h: Harness, args, f: dict, settings_rel: str, spent: list, run
             feedback = _fmt_issues((review["structured"] or {}).get("issues")) if review["ok"] else \
                 f"- the review session ended with {review['subtype']}"
             continue
+        record_review(h, f, "APPROVE", "loop reviewer", run=run.id)  # what the pass-gate's review gate reads
         gate, gate_info = _test_gate(h, baseline_tests, baseline_files)
         run.event("test-gate", gate_info.pop("result"), **gate_info)
         if gate:
@@ -2560,7 +2677,7 @@ def cmd_hook_pretool(h: Harness, args) -> int:
 
 HOOK_STATE_FILES = {".harness/trace.jsonl", ".harness/last-check.json", ".harness/session.json",
                     ".harness/activity.jsonl", ".harness/hook-state.json", ".harness/compact-snapshot.md",
-                    ".harness/failures.jsonl"}
+                    ".harness/failures.jsonl", ".harness/reviews.jsonl", ".harness/incidents.jsonl"}
 GUARDED_FEATURE_FIELDS = ("status", "evidence", "attempts", "loop_runs")
 # how a feature is judged: fixed once it is active or passing, or editing it would bypass the pass-gate
 LOCKED_WHEN_STARTED = ("verification", "verify_check", "scope", "cwd", "activated_commit", "activated_at")
@@ -3128,6 +3245,22 @@ def cmd_hook_precompact(h: Harness, args) -> int:
     return 0
 
 
+def cmd_hook_subagent_stop(h: Harness, args) -> int:
+    """SubagentStop: record the verdict of an hk-reviewer run for the review gate. SubagentStop, not PostToolUse,
+    because a subagent started in the background returns no text to PostToolUse (checked on Claude Code 2.1.287)."""
+    payload = _hook_payload()
+    if not (h.hdir / "config.json").exists():
+        return 0
+    agent = str(payload.get("agent_type") or "")
+    if not (agent == "hk-reviewer" or agent.endswith(":hk-reviewer")):
+        return 0
+    active = [f for f in h.load_features() if f.get("status") == "active"]
+    verdict = parse_verdict(payload.get("last_assistant_message", ""))
+    record_review(h, active[0] if active else None, verdict, "hk-reviewer", session=payload.get("session_id"),
+                  agent_id=payload.get("agent_id"))
+    return 0
+
+
 def cmd_hook_session_end(h: Harness, args) -> int:
     """SessionEnd: record whether the session ended with a handoff (lesson 12)."""
     payload = _hook_payload()
@@ -3202,8 +3335,9 @@ def build_parser() -> argparse.ArgumentParser:
     s = sub.add_parser("next", help="activate the next feature (WIP=1)")
     s.add_argument("--id")
     s.add_argument("--force", action="store_true")
-    s = sub.add_parser("verify", help="pass-gate: verification + project check")
+    s = sub.add_parser("verify", help="pass-gate: review gate + verification + project check")
     s.add_argument("id")
+    s.add_argument("--no-review", metavar="REASON", help="verify without an approved review (recorded as an incident)")
     s.add_argument("--skip-check", action="store_true", help="skip the project-wide check (not recommended)")
     s = sub.add_parser("block", help="mark the active feature blocked, with a reason")
     s.add_argument("id")
@@ -3233,6 +3367,7 @@ def build_parser() -> argparse.ArgumentParser:
     sub.add_parser("hook-activity", help="Claude Code PostToolUse hook: append to .harness/activity.jsonl")
     sub.add_parser("hook-precompact", help="Claude Code PreCompact hook: write .harness/compact-snapshot.md")
     sub.add_parser("hook-session-end", help="Claude Code SessionEnd hook: record the end of the session")
+    sub.add_parser("hook-subagent-stop", help="Claude Code SubagentStop hook: record an hk-reviewer verdict")
     sub.add_parser("statusline", help="Claude Code status line: feature, VCR, last check, context use")
     s = sub.add_parser("hook-pretool", help="PreToolUse guard used by `loop` sessions (scope, protected files, commands)")
     s.add_argument("--root", help="project root (set by the loop's --settings)")
@@ -3284,12 +3419,14 @@ COMMANDS = {"check": cmd_check, "status": cmd_status, "next": cmd_next, "verify"
             "hook-stop": cmd_hook_stop, "hook-pretool": cmd_hook_pretool, "try": cmd_try, "loop": cmd_loop,
             "hook-session-start": cmd_hook_session_start, "hook-prompt": cmd_hook_prompt, "hook-guard": cmd_hook_guard,
             "hook-activity": cmd_hook_activity, "hook-precompact": cmd_hook_precompact,
-            "hook-session-end": cmd_hook_session_end, "statusline": cmd_statusline}
+            "hook-session-end": cmd_hook_session_end, "hook-subagent-stop": cmd_hook_subagent_stop,
+            "statusline": cmd_statusline}
 
 
 HOOK_SWITCH_NAMES = {"hook-session-start": "session-start", "hook-prompt": "prompt", "hook-guard": "guard",
                      "hook-activity": "activity", "hook-precompact": "precompact", "hook-stop": "stop",
-                     "hook-session-end": "session-end", "statusline": "statusline"}
+                     "hook-session-end": "session-end", "hook-subagent-stop": "subagent-stop",
+                     "statusline": "statusline"}
 
 
 def main(argv: list[str] | None = None, root: Path | None = None) -> int:
@@ -3322,7 +3459,7 @@ def config_problems(cfg: dict) -> list[str]:
     for key, allowed in (("scope_guard", ("ask", "deny", "off")), ("instruction_guard", ("ask", "off")),
                          ("guard_failure", ("open", "closed")), ("scope_drift", ("warn", "error")),
                          ("verify_check", ("quick", "full")), ("trivial_verification", ("refuse", "warn")),
-                         ("checker_guard", ("ask", "off"))):
+                         ("checker_guard", ("ask", "off")), ("review_gate", ("off", "warn", "require"))):
         if key in cfg and cfg[key] not in allowed:
             out.append(f"`{key}` must be one of {', '.join(allowed)}, found {cfg[key]!r}")
     unknown_hooks = [x for x in cfg.get("hooks_off", []) or [] if x not in HOOK_SWITCH_NAMES.values()]

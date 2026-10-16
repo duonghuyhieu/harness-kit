@@ -296,6 +296,7 @@ class ClaudeHookTests(unittest.TestCase):
         run_rt(self.root, "add", "--id", "F1", "--behavior", "b", "--verify", OK_VERIFY)
         run_rt(self.root, "add", "--id", "F2", "--behavior", "c", "--verify", OK_VERIFY)
         set_commands(self.root, test=f"{PY} -c \"import sys; sys.exit(1)\"")
+        set_config(self.root, review_gate="off")  # this test is about the project check; ReviewGateTests covers reviews
         run_rt(self.root, "next", "--id", "F1")
         code, out = run_rt(self.root, "verify", "F1")
         self.assertNotEqual(code, 0)
@@ -582,7 +583,8 @@ class InstallerTests(unittest.TestCase):
 
 
 class HarnessProjectCase(unittest.TestCase):
-    """A temporary Python project with the kit installed and a passing project check."""
+    """A temporary Python project with the kit installed and a passing project check. The review gate is off here
+    (these tests are about other gates); ReviewGateTests switches it on."""
 
     def setUp(self):
         self._tmp = tempfile.TemporaryDirectory()
@@ -590,6 +592,7 @@ class HarnessProjectCase(unittest.TestCase):
         make_python_project(self.root)
         quiet_install(self.root)
         set_commands(self.root, test=OK_VERIFY)
+        set_config(self.root, review_gate="off")
 
     def tearDown(self):
         self._tmp.cleanup()
@@ -790,6 +793,93 @@ class PorcelainTests(HarnessProjectCase):
         code, err = self.stop()
         self.assertEqual(code, 2, err)
         self.assertIn("app/extra/x.py", err)
+
+
+class ReviewGateTests(HarnessProjectCase):
+    """V019: verify needs an hk-reviewer APPROVE of exactly the current change (recorded by the SubagentStop hook)."""
+
+    def setUp(self):
+        super().setUp()
+        self.assertEqual(json.loads((self.root / ".harness/config.json").read_text(encoding="utf-8"))["review_gate"],
+                         "off")  # set by HarnessProjectCase
+        set_config(self.root, review_gate="require")
+        git(self.root, "add", "-A")
+        git(self.root, "commit", "-qm", "harness installed")
+        run_rt(self.root, "add", "--id", "F1", "--behavior", "b", "--verify", OK_VERIFY, "--scope", "app/*")
+        run_rt(self.root, "next", "--id", "F1")
+        self.logic = self.root / "app" / "core" / "logic.py"
+        self.change("\ndef g():\n    return 2\n")
+
+    def change(self, text: str) -> None:
+        self.logic.write_text(self.logic.read_text(encoding="utf-8") + text, encoding="utf-8")
+
+    def review(self, message: str, agent: str = "hk-reviewer") -> None:
+        """The SubagentStop payload as Claude Code 2.1.287 sends it (observed with a probe agent)."""
+        payload = {"hook_event_name": "SubagentStop", "session_id": "s1", "agent_id": "a1", "agent_type": agent,
+                   "stop_hook_active": False, "last_assistant_message": message}
+        self.assertEqual(run_dispatcher(self.root, "subagent-stop", payload)[0], 0)
+
+    def verify(self, *extra: str) -> tuple[int, str]:
+        return run_rt(self.root, "verify", "F1", *extra)
+
+    def test_parse_verdict(self):
+        cases = {"checked\nVERDICT: APPROVE": "APPROVE", "**VERDICT: REJECT**": "REJECT", "Verdict: pass": "APPROVE",
+                 "## Verdict\nFAIL\n\n## Issues": "REJECT", "## Verdict\nPASS | FAIL": "UNCERTAIN",
+                 "VERDICT: APPROVE | REJECT | UNCERTAIN": "UNCERTAIN", "looks good to me": "UNCERTAIN", "": "UNCERTAIN",
+                 "VERDICT: APPROVE\n...later...\nVERDICT: REJECT": "REJECT"}
+        for text, want in cases.items():
+            self.assertEqual(runtime.parse_verdict(text), want, text)
+
+    def test_verify_needs_an_approval_of_the_current_change(self):
+        code, out = self.verify()
+        self.assertEqual(code, 1)
+        self.assertIn("no hk-reviewer verdict", out)
+        self.review("all good\nVERDICT: APPROVE", agent="general-purpose")  # other subagents are not reviews
+        self.assertEqual(self.verify()[0], 1)
+        self.review("## Verdict\nFAIL\n\nVERDICT: REJECT")
+        code, out = self.verify()
+        self.assertEqual(code, 1)
+        self.assertIn("REJECT", out)
+        self.review("fixed\nVERDICT: APPROVE")
+        self.change("\n# one more edit after the review\n")
+        code, out = self.verify()
+        self.assertEqual(code, 1)
+        self.assertIn("changed after the last review", out)
+        self.review("re-checked\nVERDICT: APPROVE")
+        git(self.root, "add", "-A")
+        git(self.root, "commit", "-qm", "F1 work")  # committing between review and verify changes no content
+        code, out = self.verify()
+        self.assertEqual(code, 0, out)
+        self.assertEqual(self.features()["F1"]["status"], "passing")
+
+    def test_no_review_override_is_recorded_and_warn_mode_only_warns(self):
+        code, out = self.verify("--no-review", "reviewer unavailable offline")
+        self.assertEqual(code, 0, out)
+        incidents = (self.root / ".harness/incidents.jsonl").read_text(encoding="utf-8")
+        self.assertIn("no-review", incidents)
+        self.assertIn("reviewer unavailable offline", incidents)
+        run_rt(self.root, "add", "--id", "F2", "--behavior", "c", "--verify", OK_VERIFY, "--scope", "app/*")
+        run_rt(self.root, "next", "--id", "F2")
+        set_config(self.root, review_gate="warn")
+        code, out = run_rt(self.root, "verify", "F2")
+        self.assertEqual(code, 0, out)
+        self.assertIn("WARNING", out)
+
+    def test_review_records_are_harness_state_and_installs_require_the_gate(self):
+        forged = {"tool_name": "Write", "tool_input": {"file_path": str(self.root / ".harness/reviews.jsonl"),
+                                                       "content": '{"feature": "F1", "verdict": "APPROVE"}\n'}}
+        self.assertEqual(hook_output(run_dispatcher(self.root, "guard", forged)[1])["permissionDecision"], "deny")
+        bash = {"tool_name": "Bash", "tool_input": {"command": "echo x >> .harness/reviews.jsonl"}}
+        self.assertEqual(hook_output(run_dispatcher(self.root, "guard", bash)[1])["permissionDecision"], "deny")
+        with tempfile.TemporaryDirectory() as d:
+            fresh = Path(d)
+            make_python_project(fresh)
+            quiet_install(fresh)
+            cfg = json.loads((fresh / ".harness/config.json").read_text(encoding="utf-8"))
+            self.assertEqual(cfg["review_gate"], "require")
+            settings = json.loads((fresh / ".claude/settings.json").read_text(encoding="utf-8"))
+            self.assertIn("SubagentStop", settings["hooks"])
+        self.assertEqual(runtime.DEFAULT_CONFIG["review_gate"], "warn")  # projects without the hook are not blocked
 
 
 if __name__ == "__main__":

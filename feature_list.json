@@ -1075,6 +1075,35 @@
       "priority": 18,
       "activated_at": "2026-10-16T16:16:28+07:00",
       "activated_commit": "b5d4db65e9015b23bd54ec3459a31cb56310caa0"
+    },
+    {
+      "id": "V019",
+      "category": "feature",
+      "behavior": "2.3.0: review gate — a SubagentStop hook records each hk-reviewer verdict (VERDICT: APPROVE|REJECT|UNCERTAIN) with a content fingerprint of the files changed since the feature was activated; verify requires an APPROVE on the current fingerprint (review_gate: require for Claude Code installs, warn by default), --no-review <reason> is allowed and logged; the loop records its own reviewer's pass; reviews.jsonl is harness state",
+      "verification": "python -m unittest tests.test_v2.ReviewGateTests -q",
+      "status": "passing",
+      "depends_on": [],
+      "evidence": {
+        "verified_at": "2026-10-16T16:49:55+07:00",
+        "commit": "1a0930f",
+        "command": "python -m unittest tests.test_v2.ReviewGateTests -q",
+        "exit_code": 0,
+        "duration_s": 12.2,
+        "project_check": "quick",
+        "output_tail": "----------------------------------------------------------------------\nRan 4 tests in 11.564s\n\nOK",
+        "scope_sha256": "6e7bc329bb0115d2"
+      },
+      "scope": [
+        "harness_kit/*",
+        "scripts/harness.py",
+        "tests/*",
+        "package.json",
+        "docs/*",
+        "*.md"
+      ],
+      "priority": 19,
+      "activated_at": "2026-10-16T16:36:08+07:00",
+      "activated_commit": "1a0930f1748f200c197746d190b61ebdb2c2d174"
     }
   ]
 }

@@ -83,6 +83,7 @@ HOOK_EVENTS = [  # (event, matcher or None, dispatcher argument)
     ("PreCompact", None, "precompact"),
     ("Stop", None, "stop"),
     ("SessionEnd", None, "session-end"),
+    ("SubagentStop", None, "subagent-stop"),  # records hk-reviewer verdicts for the review gate
 ]
 # v1 `--claude` items, removed by v2 when unchanged (sha256 of the v1 templates); replaced by hk-reviewer / hk-optimize
 LEGACY_ITEMS = {
@@ -167,8 +168,10 @@ def render(text: str, ctx: dict) -> str:
 
 # ----------------------------------------------------------- generated JSON ---
 
-def make_config(inv: dict, progress_file: str, feature_file: str) -> dict:
+def make_config(inv: dict, progress_file: str, feature_file: str, claude: bool = False) -> dict:
     cfg = json.loads(json.dumps(DEFAULT_CONFIG))
+    if claude:  # the SubagentStop hook records hk-reviewer verdicts, so the review gate can be enforced
+        cfg["review_gate"] = "require"
     cfg["project"] = inv["name"]
     cfg["progress_file"] = progress_file
     cfg["feature_list"] = feature_file
@@ -996,7 +999,7 @@ def build_plan(root: Path, level: str = "standard", claude: bool = False, python
                     and not (e == "CLAUDE.md" and imports_agents_md(root / e))]
 
     _plan_templates(plan, inv, level, progress_file, claude)
-    plan.add(".harness/config.json", _as_json(make_config(inv, progress_file, feature_file)))
+    plan.add(".harness/config.json", _as_json(make_config(inv, progress_file, feature_file, claude)))
     _plan_feature_list(plan, inv, legacy_entry, feature_file)
     plan.add(".harness/rules.json", _as_json(make_rules()))  # tiny, and AGENTS.md references it at every level
     if claude:

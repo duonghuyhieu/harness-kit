@@ -40,5 +40,13 @@ PASS | FAIL
 ## Commands run
 - try <id>: pass|fail
 - check: pass|fail
+
+VERDICT: APPROVE | REJECT | UNCERTAIN
 ```
 Return FAIL if any critical or major issue remains or any command fails. PASS means you would accept it as done.
+
+The **last line** of your answer is the machine-read verdict, exactly one of `VERDICT: APPROVE` (= PASS),
+`VERDICT: REJECT` (= FAIL) or `VERDICT: UNCERTAIN` (you could not check something that matters — say what). A hook
+records it with a fingerprint of the change you reviewed; `verify` accepts only an APPROVE of that exact content, so
+any edit after your review needs a new review. Missing evidence is UNCERTAIN, not APPROVE; a rationale in the maker's
+report never lowers the severity of an issue you found.
