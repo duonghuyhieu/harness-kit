@@ -10,7 +10,10 @@ argument-hint: "<feature-id>"
 
 1. Pre-checks:
    - The feature is `active` (`python scripts/harness.py status`).
-   - An **hk-reviewer** verdict of PASS exists for the current diff. If not, run `/hk-review` first.
+   - An **hk-reviewer** run ended with `VERDICT: APPROVE` on the current change — any edit after it needs a new
+     review. If not, run `/hk-review` first. With `review_gate: require` (the default for Claude Code installs)
+     `verify` refuses without it; `--no-review "<reason>"` exists for when a review is impossible, and is recorded as an
+     incident the next session sees — never use it to skip a review you could run.
    - `git status --short`: nothing outside the feature's scope (the gate reports drift; `scope_drift: error` blocks).
 2. `python scripts/harness.py verify <ID>`.
 3. PASS → show the recorded evidence (command, exit code, commit, project check) and suggest the commit message.

@@ -883,8 +883,8 @@ class ReviewGateTests(HarnessProjectCase):
         self.assertEqual(runtime.DEFAULT_CONFIG["review_gate"], "warn")  # projects without the hook are not blocked
 
 
-class IncidentTests(HarnessProjectCase):
-    """V020: gates that were bypassed or ran out are recorded and shown at the next session start."""
+class CommittedProjectCase(HarnessProjectCase):
+    """HarnessProjectCase with the install committed, plus session helpers."""
 
     def setUp(self):
         super().setUp()
@@ -898,6 +898,10 @@ class IncidentTests(HarnessProjectCase):
     def start(self, session: str, source: str = "startup") -> str:
         out = run_dispatcher(self.root, "session-start", {"source": source, "session_id": session})[1]
         return hook_output(out)["additionalContext"]
+
+
+class IncidentTests(CommittedProjectCase):
+    """V020: gates that were bypassed or ran out are recorded and shown at the next session start."""
 
     def test_exhausted_stop_gate_and_unclean_session_end_are_recorded_and_shown_once(self):
         self.assertNotIn("Incidents", self.start("s1"))
@@ -934,6 +938,48 @@ class IncidentTests(HarnessProjectCase):
         for i in range(3):
             runtime.record_incident(h, "no-review", f"verify F{i} without an approved review: offline")
         self.assertIn("recent verifies skipped the review", self.start("s3"))
+
+
+class HandoffGateTests(CommittedProjectCase):
+    """V021: the Stop gate asks for a handoff after finished work; rationalizations get a non-blocking warning."""
+
+    def stop(self, message: str = "") -> tuple[int, str, str]:
+        return run_dispatcher(self.root, "stop", {"session_id": "s1", "last_assistant_message": message})
+
+    def test_finished_work_needs_a_handoff_before_the_stop(self):
+        self.start("s1")
+        self.assertEqual(self.stop()[0], 0)  # nothing done yet: nothing to hand off
+        run_rt(self.root, "add", "--id", "F1", "--behavior", "b", "--verify", OK_VERIFY, "--scope", "app/*")
+        run_rt(self.root, "next", "--id", "F1")
+        logic = self.root / "app" / "core" / "logic.py"
+        logic.write_text(logic.read_text(encoding="utf-8") + "\ndef g():\n    return 2\n", encoding="utf-8")
+        code, out = run_rt(self.root, "verify", "F1")
+        self.assertEqual(code, 0, out)
+        code, _, err = self.stop()
+        self.assertEqual(code, 2)
+        self.assertIn("verified F1", err)
+        self.assertIn("PROGRESS.md was not updated", err)
+        (self.root / "PROGRESS.md").write_text("# Progress\nF1 done; next: F2\n", encoding="utf-8")
+        self.assertEqual(self.stop()[0], 0)
+
+    def test_a_commit_also_needs_a_handoff(self):
+        self.start("s1")
+        git(self.root, "commit", "-q", "--allow-empty", "-m", "work")
+        code, _, err = self.stop()
+        self.assertEqual(code, 2)
+        self.assertIn("made commits", err)
+
+    def test_rationalizations_warn_without_blocking(self):
+        self.start("s1")
+        code, out, _ = self.stop("The last failure is a pre-existing issue. All tests pass.")
+        self.assertEqual(code, 0)
+        msg = json.loads(out)["systemMessage"]
+        self.assertIn("pre-existing", msg)
+        self.assertIn("no `verify`/`try`/`check` ran", msg)
+        run_rt(self.root, "check")
+        code, out, _ = self.stop("All tests pass.")
+        self.assertEqual((code, out.strip()), (0, ""))  # a check ran this session: the claim has evidence
+        self.assertEqual(self.stop("Implemented the feature and added two tests.")[1].strip(), "")
 
 
 if __name__ == "__main__":

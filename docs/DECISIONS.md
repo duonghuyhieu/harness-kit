@@ -227,3 +227,20 @@ baseline-vs-harness replication E2 (haiku, n = 20 per arm).
   retracted as an artefact. What 5c did measure: clock-in ceremony fell from 24% to 16% of tool calls and code edits
   per session rose from 0.42 to 0.60 (plain: 0.53). The change is kept for that reason — less wasted work in short
   sessions — not for a measured gain in correctness.
+
+## 2026-10-16 — 2.3.0: review gate, incident ledger, handoff gate (V019–V021)
+
+- Evidence that motivates gates over prose: the pre-registered E2b + E2c batches (harness-v2, haiku, n ≈ 40 per arm)
+  found kit 2.2.0 better than a plain repository on the primary outcome (fully correct +30% [+8%, +48%]), after E2
+  with the broken 2.1.5 Stop gate found no difference. One task, one model; the mechanism is not identified.
+- V019: the review gate reads verdicts from **SubagentStop**, not PostToolUse. A probe on Claude Code 2.1.287 showed
+  that a subagent the model starts in the background returns only `isAsync`/`agentId` to PostToolUse; the reviewer's
+  final text arrives in `SubagentStop.last_assistant_message` with `agent_type`. The fingerprint hashes the content of
+  every file changed since activation (not a commit), so a commit between review and verify does not void the review,
+  but any edit does. Default `warn` in DEFAULT_CONFIG (projects updated from an older kit may not have the hook yet);
+  Claude Code installs write `require`. The loop records its own reviewer's pass.
+- V020: incidents (no-review, an exhausted Stop gate, a session ending unverified or without a handoff) are shown once,
+  at the next session start (harmonist's "PROTOCOL-EXHAUSTED" banner, survey round 3).
+- V021: the handoff gate uses PROGRESS.md's mtime against the session start, not a session stamp in the file —
+  simpler, and the existing exit-check already relies on it. Rationalization detection only warns
+  (`systemMessage`), because phrases like "pre-existing issue" are sometimes true.

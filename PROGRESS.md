@@ -50,6 +50,10 @@ _Auto-updated by `harness.py handoff` at 2026-10-16T15:53:07+07:00_
   harness-v2 session "harness-v2-e3"; applied here so one session owns this repo). 129 tests. Local commit, not pushed.
   Correction: 5b's score gap did not replicate on frozen kits (5c, no detectable difference); 5c measured less
   clock-in ceremony (24% → 16% of calls) and more code edits per session — see docs/DECISIONS.md.
+- [x] 2026-10-16: **2.3.0** (local, not pushed): V019 review gate (SubagentStop records hk-reviewer verdicts with a
+  content fingerprint; `review_gate: require` for Claude Code installs), V020 incident ledger, V021 handoff gate +
+  warn-only rationalization detector. 138 tests. V019–V021 were verified with `--no-review` (maker self-verification,
+  recorded in .harness/incidents.jsonl); an independent read-only review of 9627446..HEAD is the next step.
 
 ## In Progress
 - [ ] (none)

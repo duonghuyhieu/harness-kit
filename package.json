@@ -1,6 +1,6 @@
 {
   "name": "harness-engineering-kit",
-  "version": "2.2.1",
+  "version": "2.3.0",
   "description": "Harness engineering for coding agents: installs a verified-work harness (AGENTS.md, feature list with a pass-gate, PROGRESS handoffs, runtime checks) plus a Claude Code layer (.claude/ agents, /hk-* skills, hooks, status line).",
   "bin": {
     "harness": "bin/cli.js",

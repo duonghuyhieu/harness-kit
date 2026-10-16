@@ -1133,6 +1133,35 @@
       "priority": 20,
       "activated_at": "2026-10-16T16:50:27+07:00",
       "activated_commit": "8b488f3bad72741acf82c50574400b105a2fe80a"
+    },
+    {
+      "id": "V021",
+      "category": "feature",
+      "behavior": "2.3.0: the Stop gate blocks once when this session verified or committed work and PROGRESS.md was not updated since the session started (handoff gate); when the stop is allowed, it warns the user (systemMessage, non-blocking) about rationalizations in the final message ('pre-existing issue', skipping tests, 'should work') and about a claim that tests pass when no verify/try/check ran this session",
+      "verification": "python -m unittest tests.test_v2.HandoffGateTests -q",
+      "status": "passing",
+      "depends_on": [],
+      "evidence": {
+        "verified_at": "2026-10-16T17:12:31+07:00",
+        "commit": "4ce7ab9",
+        "command": "python -m unittest tests.test_v2.HandoffGateTests -q",
+        "exit_code": 0,
+        "duration_s": 9.9,
+        "project_check": "quick",
+        "output_tail": "----------------------------------------------------------------------\nRan 3 tests in 9.220s\n\nOK",
+        "scope_sha256": "ee92b82fcb24c1ee"
+      },
+      "scope": [
+        "harness_kit/*",
+        "scripts/harness.py",
+        "tests/*",
+        "package.json",
+        "docs/*",
+        "*.md"
+      ],
+      "priority": 21,
+      "activated_at": "2026-10-16T16:59:10+07:00",
+      "activated_commit": "6c5a7aa4b7b0406b85ede13ae6453ea452220ab9"
     }
   ]
 }

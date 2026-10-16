@@ -42,7 +42,7 @@ import sys
 import time
 from pathlib import Path
 
-VERSION = "2.2.1"
+VERSION = "2.3.0"
 STATES = ("not_started", "active", "blocked", "passing")
 STATUS_ALIASES = {"not_started": "not_started", "todo": "not_started", "planned": "not_started", "fail": "not_started",
                   "active": "active", "in_progress": "active", "blocked": "blocked",
@@ -1387,7 +1387,72 @@ def stop_problems(h: Harness) -> list[str]:
             if f.get("status") == "active" and scope_drift(h, f):
                 problems.append(f"changes outside {f['id']}'s scope: {', '.join(scope_drift(h, f)[:5])}")
     problems += unverified_changes(h)
+    problems += handoff_missing(h, session)
     return problems
+
+
+def _trace_since(h: Harness, since: float) -> list[dict]:
+    """Trace entries written at or after `since` (epoch seconds; the trace stores ISO times to the second)."""
+    out, p = [], h.hdir / "trace.jsonl"
+    if not p.exists():
+        return out
+    for line in p.read_text(encoding="utf-8", errors="replace").splitlines()[-3000:]:
+        try:
+            e = json.loads(line)
+            t = _dt.datetime.fromisoformat(e.get("ts", "")).timestamp()
+        except (ValueError, TypeError, AttributeError):
+            continue
+        if t >= since - 1:
+            out.append(e)
+    return out
+
+
+def handoff_missing(h: Harness, session: dict) -> list[str]:
+    """V021: the session finished work (a verify passed, or a commit was made) but PROGRESS.md was not updated since
+    the session started — the next session would start from a stale handoff."""
+    ts = float(session.get("ts") or 0) if isinstance(session, dict) else 0.0
+    prog = h.path("progress_file")
+    if not ts or not prog.exists() or prog.stat().st_mtime >= ts:
+        return []
+    verified = [e.get("feature") for e in _trace_since(h, ts) if e.get("cmd") == "verify" and e.get("result") == "pass"]
+    committed = bool(session.get("head")) and h.git("rev-parse", "HEAD") not in ("", session.get("head"))
+    if not verified and not committed:
+        return []
+    what = f"verified {', '.join(sorted(set(filter(None, verified))))}" if verified else "made commits"
+    return [f"this session {what} but {h.cfg['progress_file']} was not updated: hand off before finishing "
+            f"(/hk-handoff, or `python scripts/harness.py handoff` then write Done / Next Steps), so the next session "
+            f"starts from the real state"]
+
+
+RATIONALIZATIONS = [
+    (r"\bpre-?existing\s+(issue|failure|bug|problem|error|test failure)s?\b", "calls a failure pre-existing"),
+    (r"\b(skip(?:ped|ping)?|disabl(?:ed|ing))\s+(?:the\s+|a\s+|some\s+|these\s+)?(?:failing\s+)?tests?\b",
+     "mentions skipping or disabling tests"),
+    (r"\bshould\s+(?:now\s+)?(?:work|pass)\b", "says it 'should work' instead of showing that it does"),
+    (r"\b(?:unrelated|not related)\s+to\s+(?:my|the|this|these)\s+changes?\b", "declares a failure unrelated to the change"),
+]
+TESTS_PASS_CLAIM = r"\b(?:all\s+(?:the\s+)?)?tests?\s+(?:now\s+)?(?:pass(?:es|ed|ing)?|are\s+passing|succeed(?:ed)?)\b"
+
+
+def stop_warnings(h: Harness, payload: dict) -> list[str]:
+    """V021, warn-only (ECC's rationalization detector): phrases that often hide unfinished work, and a claim that the
+    tests pass when no harness check ran this session. Shown to the user; they never block."""
+    text = str(payload.get("last_assistant_message") or "")
+    if not text:
+        return []
+    out = [why for pattern, why in RATIONALIZATIONS if re.search(pattern, text, re.I)]
+    session = _read_json(h.hdir / "session.json", {})
+    ts = float(session.get("ts") or 0) if isinstance(session, dict) else 0.0
+    if ts and re.search(TESTS_PASS_CLAIM, text, re.I):
+        checked = any(e.get("cmd") in ("verify", "try", "check") for e in _trace_since(h, ts))
+        rec = _read_json(h.hdir / "last-check.json", {})
+        try:
+            checked = checked or _dt.datetime.fromisoformat(rec.get("ts", "")).timestamp() >= ts - 1
+        except (ValueError, TypeError, AttributeError):
+            pass
+        if not checked:
+            out.append("says the tests pass, but no `verify`/`try`/`check` ran in this session")
+    return out
 
 
 def cmd_hook_stop(h: Harness, args) -> int:
@@ -1407,6 +1472,11 @@ def cmd_hook_stop(h: Harness, args) -> int:
         return 0
     h.trace("hook-stop", "block" if problems else "allow", problems=len(problems), session=payload.get("session_id"))
     if not problems:
+        warnings = stop_warnings(h, payload)
+        if warnings:
+            h.trace("hook-stop", "warn", warnings=warnings, session=payload.get("session_id"))
+            print(json.dumps({"systemMessage": "harness-kit: the final message " + "; ".join(warnings) +
+                              ". Check the work before trusting it."}, ensure_ascii=False))
         return 0
     sys.stderr.write("Harness Stop hook: the repo is not in a clean state.\n")
     for p in problems[:15]:

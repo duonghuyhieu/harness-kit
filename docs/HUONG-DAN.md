@@ -84,8 +84,9 @@ Ba quy tắc cốt lõi:
 | PreToolUse | **chặn** sửa tay trạng thái harness, sửa cách chấm của feature đã bắt đầu (`verification`, `scope`, `activated_commit`) và id trùng; **hỏi** trước khi ghi ngoài scope của feature active và trước khi sửa cấu hình của chính harness (`<project>/.harness/config.json`, `<project>/.claude/settings.json`); **luôn chặn** các cách tắt hook (`git commit --no-verify`/`-n`, `core.hooksPath`, `GIT_CONFIG_*`, `claude --safe-mode`/`--bare`, `CLAUDE_CONFIG_DIR`, `disableAllHooks`); **hỏi** trước khi làm yếu "thước đo" — sửa cấu hình lint/test/CI, `.harness/rules.json`, bỏ assertion hoặc thêm skip trong file test, xóa test (`checker_guard`); không bao giờ tự "allow" |
 | PostToolUse | ghi lại tệp/lệnh phiên đã chạm vào `.harness/activity.jsonl` |
 | PreCompact | ghi `<project>/.harness/compact-snapshot.md` trước khi nén ngữ cảnh |
-| Stop | chặn kết thúc lượt khi còn debug code, file rác, feature list bị sửa tay (không chặn hai lần liên tiếp) |
-| SessionEnd | ghi nhận phiên kết thúc có handoff hay không |
+| Stop | chặn kết thúc lượt khi còn debug code, file rác, feature list bị sửa tay, thay đổi chưa được verify, hoặc khi phiên đã verify/commit mà chưa cập nhật PROGRESS.md (không chặn hai lần liên tiếp; nếu vẫn cho dừng khi còn lỗi thì ghi thành incident); cảnh báo người dùng, không chặn, khi câu trả lời cuối có dấu hiệu biện hộ ("pre-existing issue", "should work", "tests pass" mà không chạy check) |
+| SessionEnd | ghi nhận phiên kết thúc có handoff hay không; việc chưa verify hoặc chưa handoff thành incident, hiện ở đầu phiên sau |
+| SubagentStop | ghi verdict của mỗi lần `hk-reviewer` chạy (`VERDICT: APPROVE / REJECT / UNCERTAIN`) kèm dấu vân tay của thay đổi đã review: với `review_gate: require` (mặc định khi cài cho Claude Code), `verify` cần một APPROVE cho đúng nội dung hiện tại; `verify <id> --no-review "<lý do>"` được ghi thành incident |
 
 Hook là rào chắn rẻ, không phải cổng: thiếu Python hoặc runtime thì hook bỏ qua (exit 0) kèm ghi chú. Cổng thật là
 `verify` và `exit-check`. Khi hook bị lỗi, Claude Code hiện cảnh báo (`systemMessage`); muốn guard lỗi thì *từ chối*
