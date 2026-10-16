@@ -221,3 +221,9 @@ baseline-vs-harness replication E2 (haiku, n = 20 per arm).
   it now says so and names one next action (`next_action()`: continue the active feature, or `next --id <id>`). The
   AGENTS.md template says steps 1–2 are done when the hook injected the state. Patch written by that session, applied
   here (its test now uses a non-trivial verification, which 2.2.0 requires).
+- **Correction (same day):** the 5b *scores* did not replicate. 5b's harness arm had installed an in-progress working
+  tree of the kit; experiment 5c on frozen kits (n = 4 per arm, 10 × 8-turn sessions) found no detectable difference
+  in correctness (plain 45.2%, 2.2.0 47.6%, 2.2.0 + this change 50.0%; Mann–Whitney p ≈ 0.77), and the 5b scores are
+  retracted as an artefact. What 5c did measure: clock-in ceremony fell from 24% to 16% of tool calls and code edits
+  per session rose from 0.42 to 0.60 (plain: 0.53). The change is kept for that reason — less wasted work in short
+  sessions — not for a measured gain in correctness.
