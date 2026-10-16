@@ -895,8 +895,12 @@ def _read_jsonl(p: Path) -> list[dict]:
 def review_status(h: Harness, f: dict) -> tuple[bool, str]:
     """(approved for the current content, explanation)."""
     every = _read_jsonl(h.hdir / "reviews.jsonl")
-    launches = {r.get("id") for r in every if r.get("kind") == "start"}
+    launches = {r.get("id"): r for r in every if r.get("kind") == "start"}
     recs = [r for r in every if r.get("feature") == f["id"] and r.get("kind") != "start"]
+    continued = [r for r in recs if r.get("continued")]
+    recs = [r for r in recs if not r.get("continued")]
+    if not recs and continued:
+        return False, f"only a continued reviewer reported on {f['id']} ({continued[-1].get('note')})"
     if not recs:
         return False, f"no hk-reviewer verdict has been recorded for {f['id']}"
     fp = review_fingerprint(h, f)
@@ -907,7 +911,10 @@ def review_status(h: Harness, f: dict) -> tuple[bool, str]:
         (2.3.1, review round 3: a record without either was not written by the gate, e.g. by a script)."""
         if r.get("source") == "loop reviewer":
             return bool(r.get("run")) and (h.hdir / "runs" / str(r["run"])).is_dir()
-        return bool(r.get("start")) and r.get("start") in launches
+        launch = launches.get(r.get("start"))
+        users = [x for x in recs if x.get("start") == r.get("start")]
+        return bool(launch) and launch.get("feature") == f["id"] and launch.get("fingerprint") == r.get("fingerprint") \
+            and len(users) == 1  # its own launch, same content, used by this verdict only (round 4)
     if current and current[-1].get("verdict") == "APPROVE" and backed(current[-1]):
         return True, f"approved by {current[-1].get('source', 'a reviewer')} at {current[-1].get('ts')}"
     if current and current[-1].get("verdict") == "APPROVE":
@@ -916,6 +923,8 @@ def review_status(h: Harness, f: dict) -> tuple[bool, str]:
         note = f" ({current[-1]['note']})" if current[-1].get("note") else ""
         return False, f"the latest review of the current change is {current[-1].get('verdict')}{note}"
     note = f"; {recs[-1]['note']}" if recs[-1].get("note") else ""
+    if continued and float(continued[-1].get("epoch") or 0) > float(recs[-1].get("epoch") or 0):
+        note += f"; since then {continued[-1].get('note')}"
     return False, (f"the code changed after the last review ({recs[-1].get('verdict')} at {recs[-1].get('ts')}{note}): "
                    f"a review covers only the exact content it saw")
 
@@ -2931,6 +2940,16 @@ def _shell_writes(command: str, target_re: str) -> bool:
                 re.search(SHELL_COPY_RE + target_re + r"\s*($|[|;&\n])", command, flags))
 
 
+def _script_payloads(raw: str) -> list[str]:
+    """The code an interpreter runs from the command line: `python -c "…"` / `node -e "…"` payloads (interpreter
+    options before -c only, so `python -m pytest -c pytest.ini` has none) and heredoc bodies fed to python/node."""
+    out = [m.group(3) for m in re.finditer(r"\b(?:python3?|py|node)(?:\.exe)?(?:\s+-(?![mce]\b)\w+)*\s+-[ce]\s+"
+                                           r"(\$?)(['\"])(.*?)\2", raw, re.S)]
+    out += [m.group(2) for m in re.finditer(r"\b(?:python3?|py|node)(?:\.exe)?\b[^\n]*<<-?\s*['\"]?(\w+)['\"]?[^\n]*\n"
+                                            r"(.*?)\n\s*\1\s*(?:\n|$)", raw, re.S)]
+    return out
+
+
 def _normalize_shell(text: str) -> str:
     """Line continuations joined, PowerShell backtick escapes removed (`--no`-verify` is `--no-verify`)."""
     text = re.sub(r"[\\`]\r?\n", " ", text)
@@ -3442,9 +3461,14 @@ def cmd_hook_guard(h: Harness, args) -> int:
         # message that mentions hook-stop, a `pytest -k "hook-stop"` filter) is not a command (2.3.1, review round 3)
         script = re.search(r"\b(python3?|py|node)\b[^|;&\n]*(\s-[ce]\b|\s-(?:\s|$)|<<)", raw_command)
         hook_text = raw_command if script else command
-        imports_runtime = script and re.search(r"\bimport\s+harness\b|\bfrom\s+harness\s+import|scripts[\\/]+harness"
-                                               r"|\bharness_kit\b|\brunpy\b|SourceFileLoader|spec_from_file_location",
-                                               raw_command)
+        payload_text = "\n".join(_script_payloads(raw_command))
+        # a script that imports the runtime AND calls what writes its records (round 4: `python -c "import harness_kit"`
+        # or `pytest -c pytest.ini` in the kit's own development are fine)
+        imports_runtime = payload_text and re.search(
+            r"\bimport\s+harness\b|\bfrom\s+harness\s+import|scripts[\\/]+harness|\bharness_kit\b|\brunpy\b|"
+            r"SourceFileLoader|spec_from_file_location|__import__|importlib", payload_text) and re.search(
+            r"record_review|record_incident|_guard_subagent|cmd_hook_\w+|save_features|\.trace\(|"
+            r"main\(\s*\[\s*['\"]hook-", payload_text)
         if imports_runtime:
             decision, reason = "deny", ("a script that imports the harness runtime can rewrite its records; run "
                                         "`python scripts/harness.py <command>` instead")
@@ -3534,8 +3558,12 @@ def cmd_hook_subagent_stop(h: Harness, args) -> int:
     verdict = parse_verdict(payload.get("last_assistant_message", ""))
     extra: dict = {}
     start, problem = _authenticate_review(h, f, payload, verdict)
-    if start:  # every verdict uses up its launch, so the next review is paired with its own
+    if start and not start.get("continued"):  # every verdict uses up its launch, so the next review gets its own
         extra["start"] = start.get("id")
+    elif start:  # a continued reviewer (SendMessage): recorded for the log only — it can neither count nor cancel an
+        # approval (round 4); the review gate takes verdicts from fresh launches
+        verdict = "UNCERTAIN" if verdict == "APPROVE" else verdict
+        extra["note"], extra["continued"] = problem, True
     if verdict == "APPROVE":
         if problem:
             verdict, extra["note"] = "UNCERTAIN", problem
@@ -3621,12 +3649,22 @@ def _authenticate_review(h: Harness, f: dict | None, payload: dict, verdict: str
                 and float(r.get("epoch") or 0) >= recent and same_prompt(r)]
     if started is not None:  # the transcript begins after the PreToolUse hook recorded its launch (ms timestamps)
         launches = [r for r in launches if float(r.get("epoch") or 0) <= started + 0.05]
+    elif len([r for r in launches if r.get("id") not in used]) != 1:
+        # no timestamp: only an unambiguous pairing is safe (round 4: picking the latest re-opened the overlap race)
+        return None, problem or "the transcript has no timestamp and several hk-reviewer launches match its prompt"
+    else:
+        launches = [r for r in launches if r.get("id") not in used]
     if not launches:
         return None, problem or "no recorded hk-reviewer launch matches this transcript's prompt"
     own = max(launches, key=lambda r: float(r.get("epoch") or 0))
     if own.get("id") in used:
-        return None, problem or ("this transcript belongs to a review that already reported: a reviewer continued "
-                                 "with SendMessage is not a new review — launch a fresh hk-reviewer")
+        # two identical launches in one turn: the other one, if unused and on the same content, is this review's
+        twin = [r for r in launches if r.get("id") not in used and r.get("fingerprint") == own.get("fingerprint")]
+        if twin:
+            return max(twin, key=lambda r: float(r.get("epoch") or 0)), problem
+        return dict(own, continued=True), problem or (
+            "this transcript belongs to a review that already reported: a reviewer continued with SendMessage is not "
+            "a new review — launch a fresh hk-reviewer")
     return own, problem
 
 

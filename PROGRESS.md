@@ -67,6 +67,10 @@ _Auto-updated by `harness.py handoff` at 2026-10-16T15:53:07+07:00_
   probe: transcripts carry timestamps, CLAUDE.md arrives as attachments), verdicts recorded under the reviewed content's
   fingerprint, only backed APPROVEs count, runtime-importing scripts denied. `ReviewRound3Tests` (8; 6 fail on fa05e40).
   162 tests. Review round 4 follows.
+- [x] 2026-10-16: review round 4 → **APPROVE** (no critical/major issue within the threat model). V025 fixes its minor
+  findings (continued reviewers log-only, untimestamped transcripts unambiguous only, twin launches, launch-bound
+  APPROVEs, narrower runtime-import rule); `ReviewRound4Tests` (5, all fail on 8890ff1). 167 tests. Upgrade note in
+  docs/DECISIONS.md: 2.3.0 approvals no longer count. 2.3.1 is complete locally — **not pushed**.
 
 ## In Progress
 - [ ] (none)

@@ -313,3 +313,23 @@ fa05e40, the other 2 pin the finish order the old pairing already handled):
   scanned for hook names outside scripts; Get-Content is read-only; a variable holding a state path counts only when
   the script writes through it; only a top-level `set -e` exempts a trailing `echo` (not `$ErrorActionPreference`).
 - The hk-review skill says to launch a new reviewer after fixes, never to continue one with SendMessage.
+
+**Review round 4** (8890ff1): **`VERDICT: APPROVE`** — no critical or major issue within the threat model; both finish
+orders, abandoned launches, continued reviewers and the one-line forge confirmed fixed. Minor findings, fixed in V025
+with `ReviewRound4Tests` (5 tests, all failing on 8890ff1):
+- A continued reviewer's verdict (SendMessage follow-up) is recorded for the log only and can neither count nor cancel
+  an approval; the status message points to a fresh launch.
+- A transcript without timestamps pairs only when exactly one unused launch matches (picking the latest re-opened the
+  overlap race); two identical launches in one turn on the same content are paired with each other, not reported as
+  "continued".
+- An APPROVE counts only if its launch is for the same feature, carries the same fingerprint, and is named by no other
+  verdict.
+- The runtime-import rule reads only the `-c` payload or heredoc body, and needs both an import of the runtime and a
+  call that writes its records — `python -c "import harness_kit"` and `python -m pytest -c pytest.ini` (this repo's own
+  development) are fine; an obfuscated `__import__('har'+'ness')` that calls `record_review` is not.
+- **Upgrade note:** an APPROVE recorded by 2.3.0 (no launch record) no longer counts: a feature that was active during
+  the upgrade needs one fresh hk-reviewer run; `verify` says so.
+
+Still out of the model, recorded for honesty: a determined agent can forge evidence with code the guard does not
+recognise (the reviewer showed obfuscation that would also need a forged launch record); the boundary for that is the
+OS sandbox and a human reading the diff.

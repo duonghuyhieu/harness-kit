@@ -828,7 +828,7 @@ class RealReviewer:
 
     def review_stop(self, message: str, prompt: str = REVIEW_PROMPT_TEXT, transcript: bool = True,
                     agent: str = "hk-reviewer", transcript_path: Path | None = None, started_at: float | None = None,
-                    first_entries: list | None = None) -> None:
+                    first_entries: list | None = None, timestamps: bool = True) -> None:
         n, env = self._next(), self.claude_env()
         payload = {"hook_event_name": "SubagentStop", "session_id": "s1", "agent_id": f"a{n}", "agent_type": agent,
                    "stop_hook_active": False, "last_assistant_message": message}
@@ -844,6 +844,8 @@ class RealReviewer:
                 {"type": "attachment", "timestamp": stamp},
                 {"type": "assistant", "timestamp": stamp,
                  "message": {"role": "assistant", "content": [{"type": "text", "text": message}]}}]
+            if not timestamps:
+                entries = [{k: v for k, v in e.items() if k != "timestamp"} for e in entries]
             t.write_text("".join(json.dumps(e) + "\n" for e in entries), encoding="utf-8")
             payload["agent_transcript_path"] = str(t)
         self.assertEqual(run_dispatcher(self.root, "subagent-stop", payload, env=env)[0], 0)
@@ -1352,6 +1354,62 @@ class ReviewRound3Tests(ReviewRound2Tests):
         self.assertEqual(self.bash("python - <<'EOF'\np = '.harness/reviews.jsonl'\nopen(p, 'a').write('x')\nEOF"), "deny")
         for cmd in ("$ErrorActionPreference='Stop'; pytest; echo ok", "sh -c 'set -e; true'; pytest; echo ok"):
             self.assertTrue(runtime.trivial_verification(cmd), cmd)
+
+
+class ReviewRound4Tests(ReviewRound2Tests):
+    """V025, review round 4 (APPROVE with minor findings)."""
+
+    test_forging_through_python_or_a_fake_transcript_does_not_pass = None  # inherited tests run in their own class
+    test_overlapping_reviewers_are_paired_with_their_own_launch = None
+    test_a_tracked_change_outside_the_scope_voids_the_approval = None
+    test_fewer_false_positives = None
+
+    def test_a_continued_reviewer_cannot_cancel_a_valid_approval(self):
+        self.review_start()
+        first = self.last_start
+        self.review_stop("VERDICT: APPROVE")
+        self.review_stop("VERDICT: UNCERTAIN", started_at=first)  # a SendMessage follow-up to the same reviewer
+        self.assertEqual(self.verify()[0], 0)
+
+    def test_without_timestamps_only_an_unambiguous_pairing_counts(self):
+        self.review_start("Review F1.")
+        self.edit_logic("\n# edited between the two launches\n")
+        self.review_start("Review F1.")
+        self.review_stop("VERDICT: APPROVE", prompt="Review F1.", timestamps=False)
+        code, out = self.verify()
+        self.assertEqual(code, 1, out)
+        self.assertIn("no timestamp", out)
+
+    def test_two_identical_launches_in_one_turn(self):
+        self.review_start("Review F1.")
+        self.review_start("Review F1.")  # parallel Agent calls, same content
+        both = self.last_start
+        self.review_stop("VERDICT: APPROVE", prompt="Review F1.", started_at=both)
+        self.review_stop("VERDICT: APPROVE", prompt="Review F1.", started_at=both)
+        recs = [json.loads(l) for l in (self.root / ".harness/reviews.jsonl").read_text(encoding="utf-8").splitlines()]
+        self.assertEqual([r["verdict"] for r in recs if r.get("kind") != "start"], ["APPROVE", "APPROVE"])
+        self.assertEqual(self.verify()[0], 0)
+
+    def test_a_record_must_name_its_own_launch_once(self):
+        self.review_start()
+        self.review_stop("VERDICT: APPROVE")
+        h = runtime.Harness(self.root)
+        f = next(x for x in h.load_features() if x["id"] == "F1")
+        real = [json.loads(l) for l in (self.root / ".harness/reviews.jsonl").read_text(encoding="utf-8").splitlines()]
+        launch = next(r["id"] for r in real if r.get("kind") == "start")
+        self.edit_logic("\n# a change nobody reviewed\n")
+        runtime.record_review(h, f, "APPROVE", "hk-reviewer", start=launch)  # reuses a launch of other content
+        code, out = self.verify()
+        self.assertEqual(code, 1, out)
+        self.assertIn("not backed", out)
+
+    def test_runtime_import_rule_lets_the_kit_be_developed(self):
+        for cmd in ('python -c "import harness_kit; print(harness_kit.__version__)"',
+                    "python -m pytest -c pytest.ini tests && python -m harness_kit audit ."):
+            self.assertIsNone(self.bash(cmd), cmd)
+        obfuscated = ("python -c \"import sys;sys.path.insert(0,'scr'+'ipts');H=__import__('har'+'ness');"
+                      "h=H.Harness(H.Path('.'));H.record_review(h,None,'APPROVE','hk-reviewer')\"")
+        self.assertEqual(self.bash(obfuscated), "deny")
 
 
 if __name__ == "__main__":

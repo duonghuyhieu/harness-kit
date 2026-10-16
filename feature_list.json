@@ -1249,6 +1249,35 @@
       "priority": 24,
       "activated_at": "2026-10-16T20:50:25+07:00",
       "activated_commit": "fa05e400ed1a155b7c61a4440fd3458f80c993b9"
+    },
+    {
+      "id": "V025",
+      "category": "bug",
+      "behavior": "2.3.1 review round 4 (APPROVE, minor findings): continued reviewers' verdicts are log-only; untimestamped transcripts pair only unambiguously; twin launches in one turn pair with each other; an APPROVE counts only with its own launch (same feature, same fingerprint, used once); the runtime-import rule reads only -c/heredoc payloads and needs a record-writing call",
+      "verification": "python -m unittest tests.test_v2.ReviewRound4Tests -q",
+      "status": "passing",
+      "depends_on": [],
+      "evidence": {
+        "verified_at": "2026-10-16T21:21:29+07:00",
+        "commit": "8890ff1",
+        "command": "python -m unittest tests.test_v2.ReviewRound4Tests -q",
+        "exit_code": 0,
+        "duration_s": 22.7,
+        "project_check": "quick",
+        "output_tail": "----------------------------------------------------------------------\nRan 5 tests in 22.492s\n\nOK",
+        "scope_sha256": "78323071f861e0a1"
+      },
+      "scope": [
+        "harness_kit/*",
+        "scripts/harness.py",
+        "tests/*",
+        "package.json",
+        "docs/*",
+        "*.md"
+      ],
+      "priority": 25,
+      "activated_at": "2026-10-16T21:10:12+07:00",
+      "activated_commit": "8890ff162385cce03db91e22e78785001c0107c6"
     }
   ]
 }
