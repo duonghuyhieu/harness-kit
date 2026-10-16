@@ -54,6 +54,9 @@ _Auto-updated by `harness.py handoff` at 2026-10-16T15:53:07+07:00_
   content fingerprint; `review_gate: require` for Claude Code installs), V020 incident ledger, V021 handoff gate +
   warn-only rationalization detector. 138 tests. V019–V021 were verified with `--no-review` (maker self-verification,
   recorded in .harness/incidents.jsonl); an independent read-only review of 9627446..HEAD is the next step.
+- [x] 2026-10-16: the independent review returned **VERDICT: REJECT** (1 critical: an agent could forge an APPROVE by
+  running the hook command; 5 major; 9 minor). **2.3.1** (V022) fixes every reproduced finding, each with a regression
+  test in `ReviewFixTests` (12 tests, all failed on 2.3.0). 150 tests. A second review round of the fix follows.
 
 ## In Progress
 - [ ] (none)

@@ -78,7 +78,7 @@ MANIFEST = ".claude/harness-kit.json"
 HOOK_EVENTS = [  # (event, matcher or None, dispatcher argument)
     ("SessionStart", "startup|resume|clear|compact", "session-start"),
     ("UserPromptSubmit", None, "prompt"),
-    ("PreToolUse", "Edit|Write|MultiEdit|NotebookEdit|Bash|PowerShell", "guard"),
+    ("PreToolUse", "Edit|Write|MultiEdit|NotebookEdit|Bash|PowerShell|Agent|Task", "guard"),
     ("PostToolUse", "Edit|Write|MultiEdit|NotebookEdit|Bash|PowerShell", "activity"),
     ("PreCompact", None, "precompact"),
     ("Stop", None, "stop"),

@@ -1162,6 +1162,35 @@
       "priority": 21,
       "activated_at": "2026-10-16T16:59:10+07:00",
       "activated_commit": "6c5a7aa4b7b0406b85ede13ae6453ea452220ab9"
+    },
+    {
+      "id": "V022",
+      "category": "bug",
+      "behavior": "2.3.1: fixes from the independent review of 2.2-2.3 (VERDICT: REJECT): hook commands cannot be run by the agent (forged APPROVE); a review covers the content at its start (PreToolUse Agent fingerprint); state files are protected by basename and from heredoc/.NET writes; wider bypass detection; env-prefixed verification commands are not trivial, masking echo/&/subshell/sh -c are; strongest guard decision wins; review fingerprint limited to scope and robust to artefacts and an empty base; handoff gate counts only this session's commits; non-ASCII porcelain paths; robust incident banner; fewer guard false positives; shell edits/moves of tests; deduplicated incidents",
+      "verification": "python -m unittest tests.test_v2.ReviewFixTests -q",
+      "status": "passing",
+      "depends_on": [],
+      "evidence": {
+        "verified_at": "2026-10-16T17:47:26+07:00",
+        "commit": "5407b6e",
+        "command": "python -m unittest tests.test_v2.ReviewFixTests -q",
+        "exit_code": 0,
+        "duration_s": 35.6,
+        "project_check": "quick",
+        "output_tail": "----------------------------------------------------------------------\nRan 12 tests in 35.377s\n\nOK",
+        "scope_sha256": "2407a18496399927"
+      },
+      "scope": [
+        "harness_kit/*",
+        "scripts/harness.py",
+        "tests/*",
+        "package.json",
+        "docs/*",
+        "*.md"
+      ],
+      "priority": 22,
+      "activated_at": "2026-10-16T17:24:51+07:00",
+      "activated_commit": "5407b6ef7c2d45aeafeae5bd2787a255a080c3d0"
     }
   ]
 }

@@ -216,8 +216,9 @@ baseline-vs-harness replication E2 (haiku, n = 20 per arm).
 ## 2026-10-16 — 2.2.1: SessionStart names the next action instead of asking for a clock-in (V018)
 
 - Experiment 5b (harness-v2 session "harness-v2-e3", 8-turn sessions): told "clock in with `start`", harness agents
-  re-ran `start` and re-read PROGRESS.md / feature_list.json every session — 31% of their tool calls — edited the code
-  4× less and scored 26.9% vs 52.7% hidden tests (Mann–Whitney p = 0.02). The injected block already is the clock-in:
+  re-ran `start` and re-read PROGRESS.md / feature_list.json every session — 26% of their tool calls (as measured by
+  the ceremony script in the harness-v2 research repo, experiments/long-task; an earlier ad-hoc count said 31%) — edited the code 4× less and
+  scored 26.9% vs 52.7% hidden tests (Mann–Whitney p = 0.02; retracted, see below). The injected block already is the clock-in:
   it now says so and names one next action (`next_action()`: continue the active feature, or `next --id <id>`). The
   AGENTS.md template says steps 1–2 are done when the hook injected the state. Patch written by that session, applied
   here (its test now uses a non-trivial verification, which 2.2.0 requires).
@@ -244,3 +245,31 @@ baseline-vs-harness replication E2 (haiku, n = 20 per arm).
 - V021: the handoff gate uses PROGRESS.md's mtime against the session start, not a session stamp in the file —
   simpler, and the existing exit-check already relies on it. Rationalization detection only warns
   (`systemMessage`), because phrases like "pre-existing issue" are sometimes true.
+
+## 2026-10-16 — 2.3.1: fixes from an independent review of 2.2–2.3 (V022)
+
+An independent, read-only reviewer (a fresh agent that did not write the code) reviewed 9627446..HEAD and returned
+`VERDICT: REJECT` with one critical and five major findings, most reproduced. Every reproduced finding is now a
+regression test in `ReviewFixTests`; all 12 failed on 2.3.0 before the fix.
+- Critical: the agent could forge an APPROVE by piping a payload into `scripts/harness.py hook-subagent-stop`. The
+  guard now denies running hook commands by hand, and SubagentStop records an APPROVE only when the payload carries an
+  existing subagent transcript (Claude Code always sends one). Lesson: a hook command is an API, and the agent can
+  reach it through Bash unless the guard says otherwise.
+- A background review could approve content edited while it ran: an `hk-reviewer` launch (PreToolUse on the Agent
+  tool) records the fingerprint the review starts from; an APPROVE of different content becomes UNCERTAIN. A
+  reviewer prompt that dictates the verdict is refused.
+- State files are protected by basename after `cd .harness`, through `.harness/./x`, heredoc scripts and .NET
+  `[IO.File]` writes. Bypass detection: `--no-veri…` prefixes, line continuations, variables, aliases, `sh -lc`,
+  `eval`, `pwsh -NoProfile -Command`, PowerShell backticks, per-segment hooksPath reads, `HUSKY=0`, `SKIP=`, writes in
+  `.git/hooks`. Narrowed: disableAllHooks only in a settings file, CLAUDE_CONFIG_DIR only when assigned, package.json
+  only for test/lint scripts and checker keys (not dependency versions).
+- `trivial_verification`: `CI=true npm test` is a real check (the env-assignment pattern was unanchored); `; echo …`,
+  `& exit 0`, `( … || true)` and `sh -c '…; exit 0'` now count as masking. The 2.2.0 test that called `pytest; echo
+  done` valid was wrong and is corrected.
+- A configured `scope_guard: deny` is no longer weakened to ask by another concern. The review fingerprint follows the
+  feature's scope (dot-folders included), ignores test artefacts, and uses the empty tree when a feature has no base
+  commit. The handoff gate counts only commits made during the session. `dirty_paths` uses `-z` (non-ASCII paths). A
+  truncated trace line no longer drops the SessionStart injection. Fewer warnings ("should work" removed) and one
+  exhausted-gate incident per session and problem set.
+- Not fixed, documented: the maker still writes the reviewer's prompt (only an explicit verdict in it is refused); the
+  shell guard remains a guardrail, not a parser (the gates are `verify` and the review record).

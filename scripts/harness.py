@@ -42,7 +42,7 @@ import sys
 import time
 from pathlib import Path
 
-VERSION = "2.3.0"
+VERSION = "2.3.1"
 STATES = ("not_started", "active", "blocked", "passing")
 STATUS_ALIASES = {"not_started": "not_started", "todo": "not_started", "planned": "not_started", "fail": "not_started",
                   "active": "active", "in_progress": "active", "blocked": "blocked",
@@ -213,17 +213,21 @@ class Harness:
         """Paths of `git status --porcelain`. Not through `git()`: its strip() removed the leading space of the first
         line, so ' M src/x.py' became 'M src/x.py' and `[3:]` read 'rc/x.py' — the Stop gate then missed the most
         common unverified change (found by the baseline-vs-harness experiment, 2026-10-16)."""
-        try:
-            out = subprocess.run(["git", "status", "--porcelain", "--untracked-files=all"], cwd=self.root,
+        try:  # -z: NUL-separated and unquoted, so non-ASCII and spaces survive (2.3.1)
+            out = subprocess.run(["git", "status", "--porcelain", "-z", "--untracked-files=all"], cwd=self.root,
                                  capture_output=True, text=True, encoding="utf-8", errors="replace", timeout=60)
         except (OSError, subprocess.SubprocessError):
             return []
         if out.returncode != 0:
             return []
-        paths = []
-        for line in out.stdout.splitlines():  # "XY path" or "XY old -> new"; files, not untracked folders
-            if len(line) > 3 and line[2] == " ":
-                rel = line[3:].split(" -> ")[-1].strip().strip('"')
+        paths, fields, i = [], out.stdout.split("\0"), 0
+        while i < len(fields):  # "XY path" entries; a rename/copy is followed by one more field: the old path
+            entry = fields[i]
+            i += 1
+            if len(entry) > 3 and entry[2] == " ":
+                if entry[0] in "RC":
+                    i += 1
+                rel = entry[3:]
                 if rel and not is_generated(rel):
                     paths.append(rel)
         return paths
@@ -676,7 +680,13 @@ def scope_drift(h: Harness, f: dict) -> list[str]:
 
 # A verification command proves nothing when it cannot fail. Deterministic patterns only (a guardrail, not a proof:
 # `python -c "assert True"` still passes); found in the survey of open-source harnesses, 2026-10-16.
-_NEUTRAL_SEG = re.compile(r"^(cd|pushd|popd|set-location|sl|set\s+-[a-z]+|export\s+\w+=\S*|\w+=\S*)(\s|$)", re.I)
+# neutral: changes directory or environment only. An assignment is neutral only when the whole segment is assignments:
+# `CI=true npm test` runs a check (2.3.1, independent review: the unanchored pattern made it "neutral").
+_NEUTRAL_SEG = re.compile(r"^(?:(?:cd|pushd|popd|set-location|sl)(?:\s.*)?|set\s+-[a-z]+.*|export\s+\w+=\S*"
+                          r"|(?:\w+=\S*\s*)+)$", re.I)
+_ENV_PREFIX = re.compile(r"^(?:\w+=\S*\s+)+")
+_NESTED_PAYLOAD = re.compile(r"^(?:(?:ba|z|da)?sh|cmd|pwsh|powershell)(?:\.exe)?(?:\s+-\w+)*?\s+(?:-\w*c|/c|-Command)\s+"
+                             r"([\"'])(.*)\1$", re.I | re.S)
 _NOOP_CODE = r"(?:pass|print\([^)]*\)|console\.log\([^)]*\))"
 _TRIVIAL_SEG = re.compile(
     r"^(?:true|:|exit(?:\s+/b)?(?:\s+0)?|\$true|(?:echo|printf|write-host|write-output|rem)(?:\s.*)?"
@@ -687,7 +697,9 @@ _MASKING_PIPE = re.compile(r"\|\s*(tee|tail|head|cat|less|more|sort|uniq|out-hos
 
 
 def _split_segments(cmd: str) -> list[tuple[str, str]]:
-    """(separator before, segment) pairs, splitting on && || ; | and newlines outside quotes."""
+    """(separator before, segment) pairs, splitting on && || ; | & and newlines outside quotes (a single `&` runs the
+    next command anyway: in sequence on cmd.exe, in the background in sh; `2>&1`, `&>` are redirections). Grouping
+    parentheses are dropped."""
     out, buf, sep, quote, i = [], "", "", "", 0
     while i < len(cmd):
         c = cmd[i]
@@ -700,31 +712,40 @@ def _split_segments(cmd: str) -> list[tuple[str, str]]:
             out.append((sep, buf.strip()))
             sep, buf = cmd[i:i + 2], ""
             i += 1
-        elif c in ";|\n":
+        elif c in ";|\n" or (c == "&" and not buf.endswith(">") and not cmd.startswith("&>", i)):
             out.append((sep, buf.strip()))
             sep, buf = ("\n" if c == "\n" else c), ""
         else:
             buf += c
         i += 1
     out.append((sep, buf.strip()))
-    return [(s, seg) for s, seg in out if seg]
+    return [(s, seg.strip("() \t")) for s, seg in out if seg.strip("() \t")]
+
+
+def _is_trivial_seg(seg: str) -> bool:
+    return bool(_TRIVIAL_SEG.match(_ENV_PREFIX.sub("", seg) or seg))
 
 
 def trivial_verification(cmd: str) -> str | None:
     """Why `cmd` can pass without checking anything, or None. Catches placeholders (only echo/true/exit 0/`python -c
-    pass`), failures masked by `|| true` or a trailing `; exit 0`, and exit codes swallowed by a pipe into tail/tee."""
+    pass`), failures masked by `|| true`, by a trailing `; exit 0` / `; echo` / `& exit 0` (the last command's exit code
+    is the result), the same inside `sh -c '…'`, and exit codes swallowed by a pipe into tail/tee."""
     segs = _split_segments(cmd.strip())
     if not segs:
         return "it is empty"
-    real = [seg for _, seg in segs if not _NEUTRAL_SEG.match(seg) and not _TRIVIAL_SEG.match(seg)]
+    real = [seg for _, seg in segs if not _NEUTRAL_SEG.match(seg) and not _is_trivial_seg(seg)]
     if not real:
         return "it only prints, changes directory or exits 0, so it passes whatever the code does"
     for k, (sep, seg) in enumerate(segs):
-        if sep == "||" and _TRIVIAL_SEG.match(seg):
+        if sep == "||" and _is_trivial_seg(seg):
             return f"`|| {seg}` turns every failure into a pass"
-        if k == len(segs) - 1 and sep in (";", "\n") and _TRIVIAL_SEG.match(seg) and not seg.lower().startswith(
-                ("echo", "printf", "write-", "rem")):
+        if k == len(segs) - 1 and sep in (";", "\n", "&") and _is_trivial_seg(seg):
             return f"the trailing `{seg}` replaces the exit code of the check before it"
+        nested = _NESTED_PAYLOAD.match(seg)
+        if nested:
+            inner = trivial_verification(nested.group(2))
+            if inner:
+                return f"inside `{seg[:60]}`: {inner}"
     if _MASKING_PIPE.search(cmd) and "pipefail" not in cmd:
         return "a pipe into a pager or filter (tail, tee, head...) returns that program's exit code, not the check's"
     return None
@@ -792,14 +813,27 @@ def stale_features(h: Harness, feats: list[dict] | None = None) -> list[str]:
     return out
 
 
+EMPTY_TREE = "4b825dc642cb6eb9a060e54bf8d69288fbee4904"  # git's empty tree: the base when a feature has no commit
+TEST_ARTEFACTS = (".coverage", "coverage.xml", "junit*.xml", "*.log", ".pytest_cache/*", "htmlcov/*", "nosetests.xml")
+
+
 def review_fingerprint(h: Harness, f: dict) -> str:
-    """Content hash of what the feature changed: every file changed since its activation commit (committed or not, so
-    a commit between review and verify changes nothing), harness bookkeeping (`scope_exempt`) and generated files
-    left out. A review is valid only for the exact content it saw."""
+    """Content hash of what the feature changed: files changed since its activation commit (committed or not, so a
+    commit between review and verify changes nothing). With a scope, only files in it count (in dot-folders too);
+    harness bookkeeping (`scope_exempt`), generated files and test artefacts (`.coverage`, `junit.xml`…) never do,
+    so running the tests after a review does not void it. A review is valid only for the exact content it saw."""
     exempt = list(h.cfg.get("scope_exempt", []))
+    scope = _scope_globs(f)
+    base = f.get("activated_commit") or EMPTY_TREE
+    names = set(h.git("-c", "core.quotepath=false", "diff", "--name-only", base).splitlines())
+    names |= set(h.git("-c", "core.quotepath=false", "ls-files", "--others", "--exclude-standard").splitlines())
     digest = hashlib.sha256()
-    for rel in changed_files(h, f.get("activated_commit", "")):
-        if any(fnmatch.fnmatch(rel, g) for g in exempt):
+    for rel in sorted(n for n in names if n and not is_generated(n)):
+        if any(fnmatch.fnmatch(rel, g) for g in exempt) or any(fnmatch.fnmatch(rel, g) or
+                                                               fnmatch.fnmatch(rel.rsplit("/", 1)[-1], g)
+                                                               for g in TEST_ARTEFACTS):
+            continue
+        if scope and not any(fnmatch.fnmatch(rel, g) for g in scope):
             continue
         p = h.root / rel
         try:
@@ -855,7 +889,7 @@ def _read_jsonl(p: Path) -> list[dict]:
 
 def review_status(h: Harness, f: dict) -> tuple[bool, str]:
     """(approved for the current content, explanation)."""
-    recs = [r for r in _read_jsonl(h.hdir / "reviews.jsonl") if r.get("feature") == f["id"]]
+    recs = [r for r in _read_jsonl(h.hdir / "reviews.jsonl") if r.get("feature") == f["id"] and r.get("kind") != "start"]
     if not recs:
         return False, f"no hk-reviewer verdict has been recorded for {f['id']}"
     fp = review_fingerprint(h, f)
@@ -863,15 +897,20 @@ def review_status(h: Harness, f: dict) -> tuple[bool, str]:
     if current and current[-1].get("verdict") == "APPROVE":
         return True, f"approved by {current[-1].get('source', 'a reviewer')} at {current[-1].get('ts')}"
     if current:
-        return False, f"the latest review of the current change is {current[-1].get('verdict')}"
+        note = f" ({current[-1]['note']})" if current[-1].get("note") else ""
+        return False, f"the latest review of the current change is {current[-1].get('verdict')}{note}"
     return False, (f"the code changed after the last review ({recs[-1].get('verdict')} at {recs[-1].get('ts')}): "
                    f"a review covers only the exact content it saw")
 
 
 def record_incident(h: Harness, kind: str, detail: str, **extra) -> None:
-    """A gate that was bypassed or exhausted: shown at the next session start (V020)."""
+    """A gate that was bypassed or exhausted: shown at the next session start (V020). The same incident in the same
+    session is recorded once (a Stop gate that lets every turn end would otherwise log it per turn)."""
     h.hdir.mkdir(exist_ok=True)
     rec = {"ts": now_iso(), "epoch": time.time(), "kind": kind, "detail": detail[:500], **extra}
+    last = (_read_jsonl(h.hdir / "incidents.jsonl") or [{}])[-1]
+    if all(last.get(k) == rec.get(k) for k in ("kind", "detail", "session")) and rec.get("session") is not None:
+        return
     with (h.hdir / "incidents.jsonl").open("a", encoding="utf-8") as fh:
         fh.write(json.dumps(rec, ensure_ascii=False) + "\n")
     h.trace("incident", kind, detail=detail[:200])
@@ -1415,7 +1454,11 @@ def handoff_missing(h: Harness, session: dict) -> list[str]:
     if not ts or not prog.exists() or prog.stat().st_mtime >= ts:
         return []
     verified = [e.get("feature") for e in _trace_since(h, ts) if e.get("cmd") == "verify" and e.get("result") == "pass"]
-    committed = bool(session.get("head")) and h.git("rev-parse", "HEAD") not in ("", session.get("head"))
+    committed = False
+    if session.get("head") and h.git("rev-parse", "HEAD") not in ("", session.get("head")):
+        # only commits made during this session: checking out a branch with older commits is not new work (2.3.1)
+        times = h.git("log", "--format=%ct", f"{session['head']}..HEAD").split()
+        committed = any(t.isdigit() and int(t) >= ts - 1 for t in times)
     if not verified and not committed:
         return []
     what = f"verified {', '.join(sorted(set(filter(None, verified))))}" if verified else "made commits"
@@ -1428,7 +1471,6 @@ RATIONALIZATIONS = [
     (r"\bpre-?existing\s+(issue|failure|bug|problem|error|test failure)s?\b", "calls a failure pre-existing"),
     (r"\b(skip(?:ped|ping)?|disabl(?:ed|ing))\s+(?:the\s+|a\s+|some\s+|these\s+)?(?:failing\s+)?tests?\b",
      "mentions skipping or disabling tests"),
-    (r"\bshould\s+(?:now\s+)?(?:work|pass)\b", "says it 'should work' instead of showing that it does"),
     (r"\b(?:unrelated|not related)\s+to\s+(?:my|the|this|these)\s+changes?\b", "declares a failure unrelated to the change"),
 ]
 TESTS_PASS_CLAIM = r"\b(?:all\s+(?:the\s+)?)?tests?\s+(?:now\s+)?(?:pass(?:es|ed|ing)?|are\s+passing|succeed(?:ed)?)\b"
@@ -2763,29 +2805,42 @@ LOCKED_WHEN_STARTED = ("verification", "verify_check", "scope", "cwd", "activate
 GUARD_CONFIG_FILES = {".harness/config.json", ".claude/settings.json", ".claude/settings.local.json",
                       ".claude/hooks/harness_hook.py"}
 SHELL_WRITE_RE = (r"(>>?|\btee\b|\bsed\s+(-[a-zA-Z]*i|--in-place)|Set-Content|Add-Content|Out-File|"
+                  r"\[(?:System\.)?IO\.File\]::\w+|\b(?:Write|Append)All(?:Text|Lines|Bytes)\b|"
                   r"\bgit\s+(checkout|restore)\b)[^|;&\n]*")
 SHELL_COPY_RE = r"\b(cp|mv|Copy-Item|Move-Item)\b[^|;&\n]*[\s/]"  # the target is the destination: the last argument
 
 # Switching checks off is the user's action, never the agent's: always denied, in every configuration (V015; survey of
 # nah, ECC block-no-verify, 2026-10-16). Matched on the command with quoted prose removed, plus `-c "..."` payloads.
 _GIT_SUB = r"\bgit(?:\.exe)?(?:\s+(?:-[Cc]\s*\S+|--[\w-]+(?:=\S+)?))*\s+"  # git, its global options, then the subcommand
+# `--no-veri…`: git accepts any unambiguous prefix of --no-verify (`--no-ver` alone is ambiguous with --no-verbose)
 BYPASS_PATTERNS = [
-    (_GIT_SUB + r"commit\b[^|;&\n]*\s(--no-verify\b|-(?!-)[a-zA-Z]*n[a-zA-Z]*\b)",
+    (_GIT_SUB + r"commit\b[^|;&\n]*\s(--no-veri\w*|-(?!-)[a-zA-Z]*n[a-zA-Z]*\b)",
      "`git commit --no-verify`/`-n` skips the repository's commit hooks"),
-    (_GIT_SUB + r"(push|merge|rebase|am|cherry-pick|revert|pull|switch|checkout)\b[^|;&\n]*\s--no-verify\b",
+    (_GIT_SUB + r"(push|merge|rebase|am|cherry-pick|revert|pull|switch|checkout)\b[^|;&\n]*\s--no-veri\w*",
      "`--no-verify` skips the repository's git hooks"),
     (r"\bcore\.hookspath\b", "changing core.hooksPath switches the repository's git hooks off"),
     (r"\bGIT_CONFIG_(COUNT|PARAMETERS|KEY_\d+|VALUE_\d+)\b",
      "GIT_CONFIG_* variables rewrite git's configuration (and its hooks) for the command"),
     (r"\bclaude(\.exe)?\b[^|;&\n]*\s--(safe-mode|bare)\b", "starting Claude Code without its hooks bypasses the harness"),
+    (r"(?:^|\s|\$env:)HUSKY\s*=\s*['\"]?0\b", "HUSKY=0 skips the repository's git hooks"),
+    (r"(?:^|\s|\$env:)SKIP\s*=\s*\S+.*\bgit\b", "pre-commit's SKIP= skips the repository's hooks"),
+    (r"(?:\b(?:rm|del|erase|rmdir|rd|remove-item|ri|chmod|mv|move|move-item|cp|copy|copy-item|ln|unlink|truncate|tee|"
+     r"set-content|add-content|out-file|new-item)\b|\bsed\s+-\S*i|>)[^|;&\n]*\.git[\\/]+hooks\b",
+     "writing, moving or deleting files in .git/hooks switches the repository's git hooks off"),
 ]
-# matched on the raw command (they may sit inside quoted JSON or an echo)
+# matched on the raw command (they may sit inside quoted JSON or an echo); disableAllHooks only where it lands in a
+# settings file (2.3.1: a note in docs/ that mentions it is not a bypass)
 BYPASS_RAW_PATTERNS = [
-    (r"\bCLAUDE_CONFIG_DIR\b", "pointing Claude Code at another configuration folder bypasses this project's hooks"),
-    (r"[\"']?disableAllHooks[\"']?\s*[:=]\s*\$?true", "disableAllHooks switches every hook off, the harness included"),
+    (r"(?:^|[\s;&|(]|\$env:|\bexport\s+|\bset\s+)CLAUDE_CONFIG_DIR\s*=",
+     "pointing Claude Code at another configuration folder bypasses this project's hooks"),
 ]
+DISABLE_HOOKS_RE = r"[\"']?disableAllHooks[\"']?\s*\]?\s*[:=]\s*\$?true\b"
+SETTINGS_FILE_RE = r"settings(?:\.local)?\.json|\bclaude\s+config\b"
+# hook commands are run by Claude Code with its own payload; an agent running them could forge a verdict (2.3.1)
+HOOK_COMMAND_RE = r"\bharness_hook\.py\b|\bharness\.py\b[^|;&\n]*\s(?:hook-[a-z-]+)\b"
 HOOKSPATH_READ_RE = r"\bgit\b[^|;&\n]*\sconfig\b[^|;&\n]*\s(--get(-all|-regexp)?|--list|-l|--show-origin)\b"
-NESTED_SHELL_RE = r"(?:\b(?:ba|z|da)?sh|\bcmd|\bpwsh|\bpowershell)(?:\.exe)?\s+(?:-c|/c|-Command)\s+([\"'])(.*?)\1"
+NESTED_SHELL_RE = (r"(?:\b(?:ba|z|da)?sh|\bcmd|\bpwsh|\bpowershell)(?:\.exe)?(?:\s+-\w+)*?\s+(?:-\w*c|/c|-Command)\s+"
+                   r"([\"'])(.*?)\1|\beval\s+([\"'])(.*?)\3")
 
 # Files that define how the work is checked: editing an existing one can make a red check green (V015).
 CHECKER_FILES = ["pytest.ini", "tox.ini", ".coveragerc", "mypy.ini", ".mypy.ini", ".flake8", "ruff.toml", ".ruff.toml",
@@ -2793,12 +2848,14 @@ CHECKER_FILES = ["pytest.ini", "tox.ini", ".coveragerc", "mypy.ini", ".mypy.ini"
                  "jest.config.*", "vitest.config.*", "karma.conf.*", "playwright.config.*", "cypress.config.*",
                  ".golangci.y*ml", "phpunit.xml*", "phpstan.neon*", ".rubocop.yml", "rustfmt.toml", "clippy.toml",
                  ".pre-commit-config.yaml", "lefthook.y*ml", "Jenkinsfile", "azure-pipelines.yml", ".gitlab-ci.yml",
-                 ".github/workflows/*", ".circleci/*", ".husky/*", ".harness/rules.json"]
+                 ".github/workflows/*", ".circleci/*", ".husky/*", ".harness/rules.json", "conftest.py"]
 # files that hold checker settings next to other things: only changes inside the checker part count
 CHECKER_SECTION_RE = (r"^\s*\[\s*(tool\.(pytest|ruff|mypy|coverage|pylint|black|isort|flake8|pyright|bandit)|"
                       r"tool:pytest|flake8|mypy|coverage|pylint|pycodestyle)\b")
 CHECKER_JSON_KEY_RE = (r"\"(test|lint|typecheck|type-check|check|ci|pretest|posttest|format:check|verify)[\w:-]*\"\s*:"
                        r"|\"(jest|eslintConfig|prettier|vitest|mocha|ava|nyc|c8)\"\s*:")
+CHECKER_SCRIPT_RE = r"^(test|lint|typecheck|type-check|check|ci|pretest|posttest|format:check|verify)([\w:-]*)$"
+CHECKER_JSON_KEYS = ("jest", "eslintConfig", "prettier", "vitest", "mocha", "ava", "nyc", "c8")
 
 
 INSTRUCTION_FILES = ("AGENTS.md", "CLAUDE.md", "CLAUDE.local.md")
@@ -2812,7 +2869,7 @@ def _is_instruction_file(key: str) -> bool:
 def _inline_script_writes(command: str, h: Harness) -> bool:
     """`python -c` / `node -e` one-liners that open a harness state file for writing (a heuristic: a guardrail, the
     gates stay `verify` and the loop's integrity check)."""
-    if not re.search(r"\b(python3?|py|node)\b[^|;&\n]*\s-[ce]\b", command):
+    if not re.search(r"\b(python3?|py|node)\b[^|;&\n]*(\s-[ce]\b|\s-(?:\s|$)|<<)", command):  # -c, stdin, heredoc
         return False
     names = [h.cfg["feature_list"]] + sorted(HOOK_STATE_FILES)
     text = command.replace("\\", "/")
@@ -2828,31 +2885,69 @@ def _shell_writes(command: str, target_re: str) -> bool:
                 re.search(SHELL_COPY_RE + target_re + r"\s*($|[|;&\n])", command, flags))
 
 
+def _normalize_shell(text: str) -> str:
+    """Line continuations joined, PowerShell backtick escapes removed (`--no`-verify` is `--no-verify`)."""
+    text = re.sub(r"[\\`]\r?\n", " ", text)
+    return re.sub(r"`(.)", r"\1", text)
+
+
 def _bypass_reason(raw: str, scan: str) -> str | None:
-    """Why the shell command switches a check off (git hooks, Claude Code hooks), or None."""
-    texts = [scan] + [_shell_scan_text(m[1]) for m in re.findall(NESTED_SHELL_RE, raw, re.S | re.I)]
+    """Why the shell command switches a check off (git hooks, Claude Code hooks), or None. Checked per segment, also
+    inside `sh -c "…"` / `eval "…"` payloads; `--no-verify` anywhere in a git command line (e.g. in a variable)."""
+    raw = _normalize_shell(raw)
+    nested = [m[1] or m[3] for m in re.findall(NESTED_SHELL_RE, raw, re.S | re.I)]
+    texts = [_normalize_shell(scan)] + [_shell_scan_text(t) for t in nested]
     for text in texts:
-        for pattern, why in BYPASS_PATTERNS:
-            if re.search(pattern, text, re.I) and not ("hookspath" in pattern and re.search(HOOKSPATH_READ_RE, text, re.I)):
-                return why
+        if re.search(r"\bgit\b", text) and re.search(r"(?:^|[\s=])--no-veri\w*", text):
+            return "`--no-verify` skips the repository's git hooks"
+        for _, seg in _split_segments(text):
+            for pattern, why in BYPASS_PATTERNS:
+                if re.search(pattern, seg, re.I) and not ("hookspath" in pattern and re.search(HOOKSPATH_READ_RE, seg, re.I)):
+                    return why
+    if re.search(r"\balias\.\w+", raw) and re.search(r"\bcommit\b[^'\"]*\s(?:--no-veri\w*|-n)\b", raw):
+        return "a git alias with --no-verify skips the repository's git hooks"
     for pattern, why in BYPASS_RAW_PATTERNS:
         if re.search(pattern, raw):
             return why
+    if re.search(DISABLE_HOOKS_RE, raw, re.I) and re.search(SETTINGS_FILE_RE, raw, re.I):
+        return "disableAllHooks switches every hook off, the harness included"
     return None
 
 
 def _edit_bypass_reason(tool: str, tin: dict) -> str | None:
-    """A Write/Edit that switches hooks off (any settings file, also outside the project)."""
+    """A Write/Edit of a settings file (in the project or not) that switches hooks off or redirects the config."""
+    path = str(tin.get("file_path") or tin.get("notebook_path") or "")
+    if not re.search(r"settings(?:\.local)?\.json$", path.replace("\\", "/"), re.I):
+        return None
     if tool == "Write":
         text = str(tin.get("content", ""))
     elif tool == "MultiEdit":
         text = "\n".join(str(e.get("new_string", "")) for e in tin.get("edits") or [] if isinstance(e, dict))
     else:
         text = str(tin.get("new_string", tin.get("new_source", "")))
-    for pattern, why in BYPASS_RAW_PATTERNS:
-        if re.search(pattern, text):
-            return why
+    if re.search(DISABLE_HOOKS_RE, text, re.I):
+        return "disableAllHooks switches every hook off, the harness included"
+    if re.search(r"\bCLAUDE_CONFIG_DIR\b", text):
+        return "pointing Claude Code at another configuration folder bypasses this project's hooks"
     return None
+
+
+def _package_json_checker_change(current: str, proposed: str) -> bool | None:
+    """Did a package.json edit change a test/lint script or a top-level checker config? None if either side is not
+    JSON (the caller then falls back to the line heuristic). Dependency versions are not checker settings."""
+    try:
+        old, new = json.loads(current), json.loads(proposed)
+    except ValueError:
+        return None
+    if not isinstance(old, dict) or not isinstance(new, dict):
+        return None
+
+    def checker_part(d: dict) -> dict:
+        scripts = d.get("scripts") if isinstance(d.get("scripts"), dict) else {}
+        part = {f"scripts.{k}": v for k, v in scripts.items() if re.match(CHECKER_SCRIPT_RE, k)}
+        part.update({k: d[k] for k in CHECKER_JSON_KEYS if k in d})
+        return part
+    return checker_part(old) != checker_part(new)
 
 
 _COMMENT_LINE = re.compile(r"^\s*(#|//|--|;|/\*|\*)")
@@ -2902,8 +2997,12 @@ def _weakens_checker(h: Harness, rel: str, tool: str, tin: dict) -> str | None:
         if any(re.match(CHECKER_SECTION_RE, _section_of(old_l, i), re.I) for i, _ in removed) or \
                 any(re.match(CHECKER_SECTION_RE, _section_of(new_l, j), re.I) for j, _ in added):
             return f"the edit changes checker settings in {rel} (pytest, ruff, mypy, coverage...): {approve}"
-    if base == "package.json" and any(re.search(CHECKER_JSON_KEY_RE, line) for _, line in removed + added):
-        return f"the edit changes test/lint scripts or checker settings in {rel}: {approve}"
+    if base == "package.json":
+        changed = _package_json_checker_change(current, proposed)
+        if changed is None:
+            changed = any(re.search(CHECKER_JSON_KEY_RE, line) for _, line in removed + added)
+        if changed:
+            return f"the edit changes test/lint scripts or checker settings in {rel}: {approve}"
     if TEST_FILE_RE.search(rel):
         lost = _count_matches(ASSERT_RE, [l for _, l in removed]) - _count_matches(ASSERT_RE, [l for _, l in added])
         skips = _count_matches(SKIP_RE, [l for _, l in added]) - _count_matches(SKIP_RE, [l for _, l in removed])
@@ -2914,11 +3013,13 @@ def _weakens_checker(h: Harness, rel: str, tool: str, tin: dict) -> str | None:
     return None
 
 
-TEST_DELETE_RE = r"(?:^|[|;&(\n]|\s)(?:rm|del|erase|rmdir|rd|Remove-Item|ri|git\s+rm)\b([^|;&\n]*)"
+TEST_DELETE_RE = (r"(?:^|[|;&(\n]|\s)(?:rm|del|erase|rmdir|rd|Remove-Item|ri|git\s+rm|mv|move|Move-Item|ren|rename|"
+                  r"Rename-Item|git\s+mv|sed\s+-\S*i\S*|sed\s+--in-place|perl\s+-\S*i\S*)(?=\s)([^|;&\n]*)")
 
 
 def _deleted_test(scan: str) -> str | None:
-    """A test file or test folder a shell command deletes, or None."""
+    """A test file or test folder a shell command deletes, moves away or edits in place (sed/perl -i), or None —
+    Edit/Write changes of tests are judged by their assertions instead (`_weakens_checker`)."""
     for m in re.finditer(TEST_DELETE_RE, scan, re.I):
         for tok in m.group(1).split():
             t = tok.strip("'\"").rstrip("/")
@@ -3068,9 +3169,9 @@ def cmd_hook_session_start(h: Harness, args) -> int:
         atomic_write(sess_p, json.dumps({"started_at": now_iso(), "head": h.git("rev-parse", "HEAD"), "ts": time.time(),
                                          "session_id": payload.get("session_id"), "via": "hook"}, indent=2))
     lines = ["## Harness state (injected by harness-kit; rules are in AGENTS.md)"] + state_summary(h)
-    # experiment 5b (16/10/2026): told to "clock in", agents re-ran `start` and re-read PROGRESS.md / feature_list.json
-    # every session — 31% of their tool calls — and in 8-turn sessions had no turns left to code. This block already
-    # is the clock-in: say so, and name the one next action.
+    # experiments 5b/5c (16/10/2026): told to "clock in", agents re-ran `start` and re-read PROGRESS.md /
+    # feature_list.json every session (24% of their tool calls on frozen kit 2.2.0; 16% with this wording). This block
+    # already is the clock-in: say so, and name the one next action.
     lines.append("This state is current: you do not need `python scripts/harness.py start` or to re-read PROGRESS.md "
                  "and feature_list.json to learn it. " + next_action(h))
     lines.append("Rules: one feature at a time (WIP=1) · status changes only via `verify` · end with `handoff` + "
@@ -3228,37 +3329,54 @@ def cmd_hook_guard(h: Harness, args) -> int:
         elif key == "scripts/harness.py":
             reason = "scripts/harness.py is managed by harness-kit: change the kit and run `harness update`"
         decision = "deny" if reason else None
-        if not decision and key in {_path_key(p) for p in GUARD_CONFIG_FILES}:
-            decision, reason = "ask", (f"{rel} configures the harness itself (commands, hooks, guards): approve only "
-                                       f"if you asked for this change")
-        if not decision and h.cfg.get("checker_guard", "ask") == "ask":
-            why = _weakens_checker(h, rel, tool, tin)
-            if why:
-                decision, reason = "ask", why
-        if not decision and h.cfg.get("instruction_guard", "ask") == "ask" and _is_instruction_file(key):
-            decision, reason = "ask", (f"{rel} is an instruction file every later session trusts: approve only if this "
-                                       f"change was asked for (instructions written by an agent are input to review)")
-        mode = h.cfg.get("scope_guard", "ask")
-        if not decision and mode in ("ask", "deny"):
-            try:
-                feats = h.load_features()
-            except (ValueError, OSError, SystemExit):  # a broken feature list is being repaired: no scope to check
-                feats = []
-            for f in feats:
-                scope = _scope_globs(f)
-                if f.get("status") == "active" and scope and not any(
-                        fnmatch.fnmatch(rel, g) for g in scope + list(h.cfg.get("scope_exempt", []))):
-                    decision = mode
-                    reason = (f"{rel} is outside the active feature {f['id']}'s scope {scope} (WIP=1). Approve only "
-                              f"if it belongs to {f['id']}; otherwise record it as a new feature")
-                    break
+        if not decision:  # every applicable concern is reported; a configured deny is never weakened to ask (2.3.1)
+            asks, deny = [], None
+            if key in {_path_key(p) for p in GUARD_CONFIG_FILES}:
+                asks.append(f"{rel} configures the harness itself (commands, hooks, guards): approve only if you asked "
+                            f"for this change")
+            if h.cfg.get("checker_guard", "ask") == "ask":
+                why = _weakens_checker(h, rel, tool, tin)
+                if why:
+                    asks.append(why)
+            if h.cfg.get("instruction_guard", "ask") == "ask" and _is_instruction_file(key):
+                asks.append(f"{rel} is an instruction file every later session trusts: approve only if this change "
+                            f"was asked for (instructions written by an agent are input to review)")
+            mode = h.cfg.get("scope_guard", "ask")
+            if mode in ("ask", "deny"):
+                try:
+                    feats = h.load_features()
+                except (ValueError, OSError, SystemExit):  # a broken feature list is being repaired: no scope to check
+                    feats = []
+                for f in feats:
+                    scope = _scope_globs(f)
+                    if f.get("status") == "active" and scope and not any(
+                            fnmatch.fnmatch(rel, g) for g in scope + list(h.cfg.get("scope_exempt", []))):
+                        why = (f"{rel} is outside the active feature {f['id']}'s scope {scope} (WIP=1). Approve only "
+                               f"if it belongs to {f['id']}; otherwise record it as a new feature")
+                        if mode == "deny":
+                            deny = why
+                        else:
+                            asks.append(why)
+                        break
+            if deny:
+                decision, reason = "deny", "; ".join([deny] + asks)
+            elif asks:
+                decision, reason = "ask", "; ".join(asks)
+    elif tool in ("Agent", "Task"):
+        decision, reason = _guard_subagent(h, tin, payload)
     elif tool in ("Bash", "PowerShell"):
         raw_command = str(tin.get("command", ""))
         command = _shell_scan_text(raw_command)
         targets = [re.escape(h.cfg["feature_list"])] + [re.escape(p) for p in HOOK_STATE_FILES]
+        targets += [r"\.harness[\\/]+(?:\.[\\/]+)*" + re.escape(p.split("/", 1)[1]) for p in HOOK_STATE_FILES]
+        if re.search(r"\b(?:cd|pushd|set-location|sl)\s+[\"']?\.?[\\/]?\.harness\b", command, re.I):
+            targets += [r"(?:^|[\s'\"/\\])" + re.escape(p.rsplit("/", 1)[1]) for p in HOOK_STATE_FILES]
         bypass = _bypass_reason(raw_command, command)
         deleted = _deleted_test(command) if h.cfg.get("checker_guard", "ask") == "ask" else None
-        if bypass:
+        if re.search(HOOK_COMMAND_RE, command, re.I) or re.search(HOOK_COMMAND_RE, raw_command, re.I):
+            decision, reason = "deny", ("hook commands are run by Claude Code with its own payload; running one by hand "
+                                        "could forge a review verdict or session record")
+        elif bypass:
             decision, reason = "deny", (f"{bypass}. Switching checks off is the user's action, not the agent's: fix "
                                         f"what the check reports, or ask the user")
         elif any(_shell_writes(command, t) for t in targets) or _inline_script_writes(raw_command, h):
@@ -3266,8 +3384,8 @@ def cmd_hook_guard(h: Harness, args) -> int:
         elif any(_shell_writes(command, re.escape(p)) for p in GUARD_CONFIG_FILES):
             decision, reason = "ask", "the command writes a file that configures the harness itself"
         elif deleted:
-            decision, reason = "ask", (f"the command deletes the test {deleted}: tests are never deleted to get a pass "
-                                       f"— approve only if you asked for it")
+            decision, reason = "ask", (f"the command deletes, moves or edits in place the test {deleted}: tests are "
+                                       f"never loosened to get a pass — approve only if you asked for it")
     if not decision:
         return 0
     h.trace("hook-guard", decision, tool=tool, reason=reason, session=payload.get("session_id"))
@@ -3337,10 +3455,40 @@ def cmd_hook_subagent_stop(h: Harness, args) -> int:
     if not (agent == "hk-reviewer" or agent.endswith(":hk-reviewer")):
         return 0
     active = [f for f in h.load_features() if f.get("status") == "active"]
+    f = active[0] if active else None
     verdict = parse_verdict(payload.get("last_assistant_message", ""))
-    record_review(h, active[0] if active else None, verdict, "hk-reviewer", session=payload.get("session_id"),
-                  agent_id=payload.get("agent_id"))
+    note = None
+    transcript = str(payload.get("agent_transcript_path") or "")
+    if verdict == "APPROVE" and not (transcript and Path(transcript).is_file()):
+        # Claude Code always sends the subagent's transcript; a payload without one was not written by Claude Code
+        verdict, note = "UNCERTAIN", "no subagent transcript in the hook payload"
+    if verdict == "APPROVE" and f:
+        starts = [r for r in _read_jsonl(h.hdir / "reviews.jsonl") if r.get("kind") == "start" and r.get("feature") == f["id"]]
+        if starts and starts[-1].get("fingerprint") != review_fingerprint(h, f):
+            verdict, note = "UNCERTAIN", "the code changed while the review ran: the approval covers older content"
+    record_review(h, f, verdict, "hk-reviewer", session=payload.get("session_id"), agent_id=payload.get("agent_id"),
+                  **({"note": note} if note else {}))
     return 0
+
+
+def _guard_subagent(h: Harness, tin: dict, payload: dict) -> tuple[str | None, str | None]:
+    """PreToolUse on the Agent tool: an hk-reviewer launch records the fingerprint the review starts from (so edits made
+    while it runs void its approval), and a prompt that dictates the verdict is refused."""
+    agent = str(tin.get("subagent_type") or "")
+    if not (agent == "hk-reviewer" or agent.endswith(":hk-reviewer")):
+        return None, None
+    prompt = str(tin.get("prompt") or "")
+    if re.search(r"verdict\W{0,4}approve|\b(?:answer|reply|respond|return|say|output|end with|conclude)\b[^.\n]{0,40}"
+                 r"\bapprove\b", prompt, re.I):
+        return "deny", ("the reviewer's verdict must not be dictated in its prompt: describe the feature and the change, "
+                        "and let hk-reviewer judge")
+    active = [f for f in h.load_features() if f.get("status") == "active"]
+    if active:
+        rec = {"ts": now_iso(), "epoch": time.time(), "kind": "start", "feature": active[0]["id"],
+               "fingerprint": review_fingerprint(h, active[0]), "session": payload.get("session_id")}
+        with (h.hdir / "reviews.jsonl").open("a", encoding="utf-8") as fh:
+            fh.write(json.dumps(rec, ensure_ascii=False) + "\n")
+    return None, None
 
 
 def cmd_hook_session_end(h: Harness, args) -> int:
@@ -3371,8 +3519,7 @@ def incident_lines(h: Harness, since: float) -> list[str]:
     if new:
         out.append(f"## Incidents since the last session ({len(new)}) — gates that were bypassed or ran out; check them")
         out += [f"- {r.get('kind')}: {str(r.get('detail', ''))[:200]}" for r in new[-3:]]
-    trace = [json.loads(l) for l in (h.hdir / "trace.jsonl").read_text(encoding="utf-8", errors="replace").splitlines()[-500:]
-             if l.strip().startswith("{")] if (h.hdir / "trace.jsonl").exists() else []
+    trace = _read_jsonl(h.hdir / "trace.jsonl")[-500:]  # one truncated line must not cost the whole injection
     passes = sum(1 for e in trace if e.get("cmd") == "verify" and e.get("result") == "pass")
     skips = sum(1 for r in recs[-50:] if r.get("kind") == "no-review")
     if skips >= 3 and skips >= 0.25 * max(passes, 1):
