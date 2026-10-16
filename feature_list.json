@@ -994,9 +994,18 @@
       "category": "feature",
       "behavior": "2.2.0: verify records a fingerprint of the feature's scope files; status, SessionStart, the compaction snapshot and exit-check list passing features whose scope changed since they last passed (stale), and check --full re-baselines a stale feature whose verification passes again",
       "verification": "python -m unittest tests.test_v2.StalePassTests -q",
-      "status": "not_started",
+      "status": "passing",
       "depends_on": [],
-      "evidence": null,
+      "evidence": {
+        "verified_at": "2026-10-16T15:37:15+07:00",
+        "commit": "af4c209",
+        "command": "python -m unittest tests.test_v2.StalePassTests -q",
+        "exit_code": 0,
+        "duration_s": 6.9,
+        "project_check": "quick",
+        "output_tail": "----------------------------------------------------------------------\nRan 2 tests in 6.237s\n\nOK",
+        "scope_sha256": "ac4e98da6f8de5a4"
+      },
       "scope": [
         "harness_kit/*",
         "scripts/harness.py",
@@ -1005,7 +1014,9 @@
         "docs/*",
         "*.md"
       ],
-      "priority": 16
+      "priority": 16,
+      "activated_at": "2026-10-16T15:31:00+07:00",
+      "activated_commit": "af4c209910b0b91820e4313051330332410170de"
     }
   ]
 }

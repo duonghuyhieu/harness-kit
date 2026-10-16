@@ -16,7 +16,7 @@ from pathlib import Path
 sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
 
 from harness_kit import installer, runtime, scaffold  # noqa: E402
-from tests.test_kit import OK_VERIFY, PY, make_python_project, run_rt, set_commands, set_config  # noqa: E402
+from tests.test_kit import OK_VERIFY, PY, git, make_python_project, run_rt, set_commands, set_config  # noqa: E402
 
 
 def run_dispatcher(root: Path, event: str, payload: dict, env: dict | None = None) -> tuple[int, str, str]:
@@ -702,6 +702,44 @@ class CheckerGuardTests(HarnessProjectCase):
         self.assertEqual(self.bash("rm tests/test_logic.py"), "ask")
         self.assertEqual(self.bash("git rm -r tests"), "ask")
         self.assertIsNone(self.bash("rm -rf build"))
+
+
+class StalePassTests(HarnessProjectCase):
+    """V016: a passing feature whose scope files changed since it last passed is reported as stale."""
+
+    def pass_feature(self, fid: str, scope: str) -> None:
+        run_rt(self.root, "add", "--id", fid, "--behavior", "b", "--verify", OK_VERIFY, "--scope", scope)
+        run_rt(self.root, "next", "--id", fid)
+        code, out = run_rt(self.root, "verify", fid)
+        self.assertEqual(code, 0, out)
+
+    def test_change_in_scope_makes_a_feature_stale_until_check_full(self):
+        self.pass_feature("F1", "app/core/*")
+        self.assertTrue(self.features()["F1"]["evidence"]["scope_sha256"])
+        self.assertNotIn("Stale", run_rt(self.root, "status")[1])
+        (self.root / "README.md").write_text("outside the scope\n", encoding="utf-8")
+        self.assertNotIn("Stale", run_rt(self.root, "status")[1])
+        logic = self.root / "app" / "core" / "logic.py"
+        logic.write_text(logic.read_text(encoding="utf-8") + "\ndef g():\n    return 2\n", encoding="utf-8")
+        out = run_rt(self.root, "status")[1]
+        self.assertIn("Stale: 1 passing feature(s)", out)
+        self.assertIn("F1", out)
+        ctx = hook_output(run_dispatcher(self.root, "session-start", {"source": "startup"})[1])["additionalContext"]
+        self.assertIn("Stale: 1", ctx)
+        self.assertIn("Stale: 1", run_rt(self.root, "exit-check", "--no-run")[1])
+        out = run_rt(self.root, "check", "--full")[1]
+        self.assertIn("re-verified on the current code: F1", out)
+        self.assertNotIn("Stale", run_rt(self.root, "status")[1])
+        self.assertIn("reverified_at", self.features()["F1"]["evidence"])
+
+    def test_commit_of_the_feature_itself_and_bookkeeping_files_are_not_changes(self):
+        self.pass_feature("F2", "*.md")
+        git(self.root, "add", "-A")
+        git(self.root, "commit", "-qm", "F2")
+        (self.root / "PROGRESS.md").write_text("# Progress\nupdated by the handoff\n", encoding="utf-8")  # scope_exempt
+        self.assertNotIn("Stale", run_rt(self.root, "status")[1])
+        (self.root / "README.md").write_text("changed\n", encoding="utf-8")
+        self.assertIn("F2", run_rt(self.root, "status")[1].split("Stale:")[-1])
 
 
 if __name__ == "__main__":

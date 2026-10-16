@@ -410,13 +410,23 @@ def run_docs(h: Harness, strict: bool = False) -> tuple[bool, list[str]]:
 
 def run_regression(h: Harness) -> tuple[bool, list[str]]:
     msgs, ok = [], True
-    for f in h.load_features():
+    feats, cache, rebased = h.load_features(), {}, []
+    for f in feats:
         if f.get("status") == "passing" and isinstance(f.get("verification"), str) and f["verification"].strip():
             code, out, _ = h.run_shell(f["verification"], f.get("cwd", "."))
             if code != 0:
                 ok = False
                 msgs.append(f"ERROR: regression in {f['id']} ({f.get('behavior', '')}) — a verification command that used to pass now fails.\n"
                             f"  FIX: fix the regression before doing anything else.\n{tail(out, 15)}")
+                continue
+            ev = f.get("evidence") if isinstance(f.get("evidence"), dict) else None
+            fp = scope_fingerprint(h, f, cache) if ev is not None else None
+            if fp and ev.get("scope_sha256") != fp:  # passed again on the changed scope: no longer stale
+                ev["scope_sha256"], ev["reverified_at"] = fp, now_iso()
+                rebased.append(f["id"])
+    if rebased:
+        h.save_features(feats)
+        msgs.append(f"re-verified on the current code: {', '.join(rebased)}")
     return ok, msgs
 
 
@@ -547,6 +557,9 @@ def cmd_status(h: Harness, args) -> int:
           f"branch: {h.git('rev-parse', '--abbrev-ref', 'HEAD') or '-'}")
     print(f"Features: {s['passing']}/{s['total']} passing | active {s['active']} | blocked {s['blocked']} | "
           f"not_started {s['not_started']} | VCR {s['vcr']}")
+    stale = stale_features(h, feats)
+    if stale:
+        print(_stale_line(stale))
     for f in feats:
         if f.get("status") in ("active", "blocked"):
             extra = f" — reason: {f.get('blocked_reason')}" if f.get("status") == "blocked" else ""
@@ -719,6 +732,51 @@ def _assertion_free_tests(h: Harness, ver: str, cwd: str) -> list[str]:
     return out
 
 
+def scope_fingerprint(h: Harness, f: dict, cache: dict) -> str | None:
+    """sha256 over the feature's scope files (path + content; harness bookkeeping in `scope_exempt` left out), or None
+    without a scope or a git repository. `cache` is shared across features within one call: each file is hashed once.
+    A content hash, not a commit: the feature's own commit lands after `verify`, and must not make it look changed."""
+    globs = _scope_globs(f)
+    if not globs:
+        return None
+    files = cache.get("\0files")
+    if files is None:
+        names = h.git("ls-files", "-co", "--exclude-standard").splitlines()
+        exempt = list(h.cfg.get("scope_exempt", []))
+        files = cache["\0files"] = sorted({n for n in names if n and not is_generated(n) and (h.root / n).is_file()
+                                           and not any(fnmatch.fnmatch(n, g) for g in exempt)})
+    if not files:
+        return None
+    digest = hashlib.sha256()
+    for rel in files:
+        if any(fnmatch.fnmatch(rel, g) for g in globs):
+            if rel not in cache:
+                try:
+                    cache[rel] = hashlib.sha256((h.root / rel).read_bytes().replace(b"\r\n", b"\n")).hexdigest()
+                except OSError:
+                    cache[rel] = "unreadable"
+            digest.update(f"{rel}\0{cache[rel]}\n".encode("utf-8"))
+    return digest.hexdigest()[:16]
+
+
+def stale_features(h: Harness, feats: list[dict] | None = None) -> list[str]:
+    """Passing features whose scope files changed since their verification last passed (`verify` or `check --full`)."""
+    cache: dict = {}
+    out = []
+    for f in feats if feats is not None else h.load_features():
+        ev = f.get("evidence") if isinstance(f.get("evidence"), dict) else {}
+        if f.get("status") == "passing" and ev.get("scope_sha256"):
+            if scope_fingerprint(h, f, cache) not in (None, ev["scope_sha256"]):
+                out.append(f["id"])
+    return out
+
+
+def _stale_line(stale: list[str]) -> str:
+    more = f" (+{len(stale) - 8} more)" if len(stale) > 8 else ""
+    return (f"Stale: {len(stale)} passing feature(s) changed since they last passed — {', '.join(stale[:8])}{more}; "
+            f"`check --full` re-runs their verifications")
+
+
 def _require_verifiable(f: dict, h: Harness | None = None) -> str:
     """The verification command of an active feature; anything else is a domain error."""
     if f.get("status") != "active":
@@ -794,6 +852,9 @@ def _mark_passing(h: Harness, feats: list[dict], f: dict, ver: str, out: str, du
     f["evidence"] = {"verified_at": now_iso(), "commit": h.head() or None, "command": ver,
                      "exit_code": 0, "duration_s": round(dur, 1), "project_check": project_check,
                      "output_tail": tail(out, 8)}
+    fp = scope_fingerprint(h, f, {})
+    if fp:
+        f["evidence"]["scope_sha256"] = fp
     if drift:
         f["evidence"]["out_of_scope_changes"] = drift[:20]
     h.save_features(feats)
@@ -984,6 +1045,9 @@ def _exit_check_state(h: Harness, problems: list[str], warnings: list[str]) -> d
                         f"Done / In Progress / Known Issues / Next Steps).")
     if not session:
         warnings.append("no .harness/session.json — next time, start the session with `start`.")
+    stale = stale_features(h)
+    if stale:
+        warnings.append(_stale_line(stale))
     return session
 
 
@@ -2743,6 +2807,9 @@ def state_summary(h: Harness) -> list[str]:
                 lines.append(f"  failed verify attempts so far: {f['attempts']}")
         elif f.get("status") == "blocked":
             lines.append(f"BLOCKED {f['id']} — {f.get('blocked_reason', '')}")
+    stale = stale_features(h, feats)
+    if stale:
+        lines.append(_stale_line(stale))
     steps = _next_steps(h)
     if steps:
         lines.append("Next steps (PROGRESS.md): " + " | ".join(steps))

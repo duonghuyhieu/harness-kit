@@ -350,6 +350,7 @@
           "out_of_scope_changes",
           "output_tail",
           "project_check",
+          "scope_sha256",
           "verified_at"
         ],
         null
