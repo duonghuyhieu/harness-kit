@@ -243,6 +243,25 @@ class ClaudeHookTests(unittest.TestCase):
         self.assertNotEqual(code, 0)
         self.assertIn("unknown key `bogus_key`", out)
 
+    def test_loop_reviewer_may_run_the_active_feature_verification(self):
+        """Experiment 4: loop reviewers were denied the feature's own verification command and returned FAIL."""
+        run_rt(self.root, "add", "--id", "F1", "--behavior", "b", "--verify", "python -m unittest tests.test_part2 -q")
+        run_rt(self.root, "next", "--id", "F1")
+        tools = runtime._allowed_tools(runtime.Harness(self.root), "reviewer")
+        self.assertIn("Bash(python -m unittest tests.test_part2 -q)", tools)
+        self.assertIn("Bash(python -m unittest tests.test_part2 *)", tools)  # -v instead of -q
+        self.assertIn("PowerShell(python -m unittest tests.test_part2 -q)", tools)
+        self.assertNotIn("Edit", tools)
+
+    def test_stop_flags_work_on_a_feature_nobody_activated(self):
+        """Experiment 2 (sonnet): code for F1 written without `next`/`verify`; the next session redid it."""
+        run_rt(self.root, "add", "--id", "F1", "--behavior", "b", "--verify", f"{PY} -c pass", "--scope", "app/*")
+        run_rt(self.root, "start", "--no-check")
+        (self.root / "app" / "feature_code.py").write_text("X = 2\n", encoding="utf-8")
+        code, _, err = run_dispatcher(self.root, "stop", {"session_id": "s9"})
+        self.assertEqual(code, 2)
+        self.assertIn("next --id F1", err)
+
     def test_verify_explains_a_red_baseline_from_future_features(self):
         """Experiment 2: up-front tests of later features keep the project check red; verify must say why."""
         run_rt(self.root, "add", "--id", "F1", "--behavior", "b", "--verify", f"{PY} -c pass")

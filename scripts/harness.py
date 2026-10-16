@@ -41,7 +41,7 @@ import sys
 import time
 from pathlib import Path
 
-VERSION = "2.1.3"
+VERSION = "2.1.4"
 STATES = ("not_started", "active", "blocked", "passing")
 STATUS_ALIASES = {"not_started": "not_started", "todo": "not_started", "planned": "not_started", "fail": "not_started",
                   "active": "active", "in_progress": "active", "blocked": "blocked",
@@ -1129,16 +1129,29 @@ def _last_verification_epoch(h: Harness, fid: str) -> float:
 def unverified_changes(h: Harness) -> list[str]:
     """Stop gate (R11): the active feature has files changed after its verification last ran. Cheap: git status and
     file times only, no test run; the Stop hook blocks once, then `stop_hook_active` lets the turn end."""
-    active = [f for f in h.load_features() if f.get("status") == "active"]
+    feats = h.load_features()
+    active = [f for f in feats if f.get("status") == "active"]
+    dirty = []
+    for line in h.git("status", "--porcelain").splitlines():
+        rel = line[3:].strip().strip('"').split(" -> ")[-1]
+        if rel and not rel.startswith((".harness/", ".claude/")) and rel not in (h.cfg["feature_list"],
+                                                                               h.cfg["progress_file"]):
+            dirty.append(rel)
     if not active:
+        # work that belongs to a feature nobody activated: no gate ever sees it, and the next session finds the feature
+        # still not_started and does it again (found with sonnet in experiment 2, 16/10/2026)
+        for f in feats:
+            scope = _scope_globs(f)
+            hit = [rel for rel in dirty if scope and any(fnmatch.fnmatch(rel, g) for g in scope)]
+            if f.get("status") in ("not_started", "blocked") and hit:
+                return [f"{', '.join(hit[:3])} changed, which is {f['id']}'s scope, but {f['id']} is {f.get('status')}: "
+                        f"activate it (`python scripts/harness.py next --id {f['id']}`) and run `verify {f['id']}`, so "
+                        f"the next session sees it as done — otherwise it starts this work again"]
         return []
     f = active[0]
     scope = _scope_globs(f)
     changed = []
-    for line in h.git("status", "--porcelain").splitlines():
-        rel = line[3:].strip().strip('"').split(" -> ")[-1]
-        if not rel or rel.startswith((".harness/", ".claude/")) or rel in (h.cfg["feature_list"], h.cfg["progress_file"]):
-            continue
+    for rel in dirty:
         if scope and not any(fnmatch.fnmatch(rel, g) for g in scope):
             continue
         p = h.root / rel
@@ -1264,16 +1277,21 @@ def _allowed_tools(h: Harness, role: str) -> list[str]:
              "Bash(python scripts/harness.py check *)", "Bash(python scripts/harness.py status)",
              # found in the first logged run: AGENTS.md tells agents to clock in, and they prefix `cd <root> &&`
              "Bash(python scripts/harness.py start)", "Bash(cd *)"]
-    for key in ("test", "lint", "typecheck", "build", "e2e", "smoke"):
-        for c in h.cfg["commands"].get(key, []):
-            if "," in c["cmd"]:
-                continue
-            tools.append(f"Bash({c['cmd']})")
-            words = c["cmd"].split()
-            while len(words) > 1 and words[-1].startswith("-"):  # same command with other flags, e.g. -v for -q
-                words.pop()
-            if len(words) >= 2 and words != c["cmd"].split():  # never widen to a bare interpreter (`node *`)
-                tools.append(f"Bash({' '.join(words)} *)")
+    cmds = [c["cmd"] for key in ("test", "lint", "typecheck", "build", "e2e", "smoke")
+            for c in h.cfg["commands"].get(key, [])]
+    # the active feature's own verification command: the reviewer must be able to run exactly what it checks
+    # (experiment 4, 16/10/2026: reviewers were denied `python -m unittest tests.test_part2 -q` and returned FAIL)
+    cmds += [part.strip() for f in h.load_features() if f.get("status") == "active"
+             and isinstance(f.get("verification"), str) for part in f["verification"].split("&&") if part.strip()]
+    for cmd in dict.fromkeys(cmds):
+        if "," in cmd:
+            continue
+        tools.append(f"Bash({cmd})")
+        words = cmd.split()
+        while len(words) > 1 and words[-1].startswith("-"):  # same command with other flags, e.g. -v for -q
+            words.pop()
+        if len(words) >= 2 and words != cmd.split():  # never widen to a bare interpreter (`node *`)
+            tools.append(f"Bash({' '.join(words)} *)")
     # read-only helpers agents chain with (`... | grep x | head`); compound commands need every part allowed
     tools += ["Bash(grep *)", "Bash(head *)", "Bash(tail *)", "Bash(cat *)", "Bash(ls *)", "Bash(ls)", "Bash(wc *)",
               "Bash(git show *)"]

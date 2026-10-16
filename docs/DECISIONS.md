@@ -175,3 +175,12 @@
   `verify` could never pass the first feature, and WIP=1 plus the scope guard forbade fixing it inside that feature;
   the agent blocked, forced and unblocked features in a loop. `verify` now says when its own verification passed,
   which product features have not started, and what to do (pending tests or leave them out of `commands.test`).
+
+## 2026-10-16 — 2.1.4: gates that reach agents who skip the workflow; reviewers that can run the check
+
+- Experiment 2 with sonnet: in 3 of 4 harness runs the agent never ran `next`/`verify`; the next session found the
+  feature still not_started and redid it, so part 3 was never started. The Stop hook now blocks once when files in a
+  not-started feature's scope changed. Re-run with 2.1.4: the agent used the workflow in 4/4 runs (features passing
+  0.75/3 → 2.75/3).
+- Experiment 4 (`harness.py loop`): reviewers were denied the active feature's own verification command and returned
+  FAIL. The loop now allows exactly that command (and its flag variants) for both roles.

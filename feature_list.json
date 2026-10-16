@@ -876,6 +876,34 @@
       "priority": 11,
       "activated_at": "2026-10-16T00:22:13+07:00",
       "activated_commit": "75e7ba75e0c1c2ca78d07fe90338bbf6c4fdf7d0"
+    },
+    {
+      "id": "V012",
+      "category": "bug",
+      "behavior": "2.1.4: Stop hook blocks once on changes in a not-started feature's scope; loop reviewers may run the active feature's verification command",
+      "verification": "python -m unittest tests.test_v2 -q",
+      "status": "passing",
+      "depends_on": [],
+      "evidence": {
+        "verified_at": "2026-10-16T10:05:52+07:00",
+        "commit": "c2e1b40",
+        "command": "python -m unittest tests.test_v2 -q",
+        "exit_code": 0,
+        "duration_s": 37.6,
+        "project_check": "quick",
+        "output_tail": "----------------------------------------------------------------------\nRan 29 tests in 36.847s\n\nOK"
+      },
+      "scope": [
+        "harness_kit/*",
+        "scripts/harness.py",
+        "tests/*",
+        "package.json",
+        "docs/*",
+        "*.md"
+      ],
+      "priority": 12,
+      "activated_at": "2026-10-16T10:02:28+07:00",
+      "activated_commit": "c2e1b401618403b742d4bb38cfb7f75123cfd32d"
     }
   ]
 }
