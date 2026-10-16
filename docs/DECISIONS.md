@@ -294,3 +294,22 @@ from a test after the approval). Fixes, each with a regression test in `ReviewRo
   is not a security boundary against an agent that writes code to defeat it — an agent that can run arbitrary code on
   the machine can forge any local evidence. The gates make that a deliberate, multi-step act, and the incident ledger
   and trace make it visible; the boundary for adversarial agents is the OS sandbox and the human review of the diff.
+
+**Review round 3** (fa05e40): `VERDICT: REJECT` on one major issue — with identical prompts (the normal case: the
+hk-review skill passes only the feature id), "oldest unused launch first" paired a reviewer that finished early with
+the other reviewer's launch, so an APPROVE of older content could cover the current content. Within the threat model
+the reviewer found no cheap single-step way to pass `verify` without a real review; outside it, a one-line
+`python -c` call of `record_review` could write an APPROVE. V024, with `ReviewRound3Tests` (8 tests; 6 fail on
+fa05e40, the other 2 pin the finish order the old pairing already handled):
+- A launch is paired with its transcript **by time**: the transcript's first message carries a timestamp (a third probe
+  on Claude Code 2.1.287 confirmed it, and that a project CLAUDE.md arrives as `attachment` entries, not before the
+  prompt), so its own launch is the last matching one recorded before it began. Any finish order works, an abandoned
+  launch (denied, crashed) is never chosen, and a reviewer continued with SendMessage (its launch already used) is
+  reported as such. A verdict is recorded under the fingerprint of the content its review *started* on, so a late
+  verdict of an older review neither covers nor overwrites the verdict on the current content.
+- `review_status` counts an APPROVE only if it names a recorded launch (hook) or an existing run folder (loop); the
+  guard denies `-c`/heredoc/stdin scripts that import the runtime.
+- `isMeta` entries are skipped and block content is accepted when matching the prompt; quoted prose is no longer
+  scanned for hook names outside scripts; Get-Content is read-only; a variable holding a state path counts only when
+  the script writes through it; only a top-level `set -e` exempts a trailing `echo` (not `$ErrorActionPreference`).
+- The hk-review skill says to launch a new reviewer after fixes, never to continue one with SendMessage.

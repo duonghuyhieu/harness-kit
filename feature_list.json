@@ -1220,6 +1220,35 @@
       "priority": 23,
       "activated_at": "2026-10-16T18:02:43+07:00",
       "activated_commit": "584b061b3641154e9919bce6464a15bcc68db61e"
+    },
+    {
+      "id": "V024",
+      "category": "bug",
+      "behavior": "2.3.1 review round 3: a reviewer's transcript is paired with its own launch by time (last matching launch recorded before the transcript began), so overlapping reviewers with identical prompts are right in any finish order, abandoned launches are never chosen and continued reviewers are reported; verdicts are recorded under the fingerprint of the content the review started on; only APPROVEs backed by a recorded launch or loop run count; scripts that import the runtime are denied; isMeta/block transcripts; fewer false positives; errexit only for a top-level set -e",
+      "verification": "python -m unittest tests.test_v2.ReviewRound3Tests -q",
+      "status": "passing",
+      "depends_on": [],
+      "evidence": {
+        "verified_at": "2026-10-16T20:55:59+07:00",
+        "commit": "fa05e40",
+        "command": "python -m unittest tests.test_v2.ReviewRound3Tests -q",
+        "exit_code": 0,
+        "duration_s": 20.2,
+        "project_check": "quick",
+        "output_tail": "----------------------------------------------------------------------\nRan 8 tests in 19.514s\n\nOK",
+        "scope_sha256": "93339365ea6d1343"
+      },
+      "scope": [
+        "harness_kit/*",
+        "scripts/harness.py",
+        "tests/*",
+        "package.json",
+        "docs/*",
+        "*.md"
+      ],
+      "priority": 24,
+      "activated_at": "2026-10-16T20:50:25+07:00",
+      "activated_commit": "fa05e400ed1a155b7c61a4440fd3458f80c993b9"
     }
   ]
 }

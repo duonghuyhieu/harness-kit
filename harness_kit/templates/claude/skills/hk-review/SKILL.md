@@ -13,7 +13,9 @@ The maker never grades its own work: agents systematically overrate their own ou
 2. Delegate to the **hk-reviewer** subagent. Give it only: the feature id (or the diff base) and, if present, the path
    of the sprint contract. Do not give it your reasoning, a summary of the change, or the expected verdict.
 3. Relay the verdict to the user unchanged: PASS/FAIL, the issues with location and fix, and the commands it ran.
-4. FAIL → fix and review again (a fresh reviewer each time). Repeated similar findings across features → propose a
+4. FAIL → fix and review again with a **new** hk-reviewer launch each time — never continue the previous reviewer with
+   SendMessage: the review gate counts a verdict only from a fresh launch on the current content, and a continued
+   reviewer's verdict is recorded as UNCERTAIN. Repeated similar findings across features → propose a
    machine check in `.harness/rules.json` (pattern + why + fix) so the harness catches it next time.
 5. PASS on an active feature → `/hk-verify <id>`.
 

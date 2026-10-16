@@ -736,7 +736,9 @@ def trivial_verification(cmd: str) -> str | None:
     real = [seg for _, seg in segs if not _NEUTRAL_SEG.match(seg) and not _is_trivial_seg(seg)]
     if not real:
         return "it only prints, changes directory or exits 0, so it passes whatever the code does"
-    errexit = re.search(r"\bset\s+-\w*e|\bset\s+-o\s+errexit|\$ErrorActionPreference\s*=\s*['\"]?Stop", cmd, re.I)
+    # `set -e` at the top level stops at the failing check, so a trailing echo cannot mask it. Not PowerShell's
+    # $ErrorActionPreference: it does not stop on a native command's exit code (2.3.1, review round 3).
+    errexit = any(re.match(r"set\s+(?:-\w*e\w*|-o\s+errexit)\b", seg) for _, seg in segs[:-1])
     for k, (sep, seg) in enumerate(segs):
         if sep == "||" and _is_trivial_seg(seg):
             return f"`|| {seg}` turns every failure into a pass"
@@ -868,7 +870,8 @@ def parse_verdict(text: str) -> str:
 
 def record_review(h: Harness, f: dict | None, verdict: str, source: str, **extra) -> dict:
     rec = {"ts": now_iso(), "epoch": time.time(), "feature": f["id"] if f else None, "verdict": verdict,
-           "fingerprint": review_fingerprint(h, f) if f else None, "source": source, **extra}
+           "fingerprint": review_fingerprint(h, f) if f else None, "source": source}
+    rec.update(extra)  # `fingerprint` in extra: the content a review saw, when that is not the current content
     h.hdir.mkdir(exist_ok=True)
     with (h.hdir / "reviews.jsonl").open("a", encoding="utf-8") as fh:
         fh.write(json.dumps(rec, ensure_ascii=False) + "\n")
@@ -891,17 +894,29 @@ def _read_jsonl(p: Path) -> list[dict]:
 
 def review_status(h: Harness, f: dict) -> tuple[bool, str]:
     """(approved for the current content, explanation)."""
-    recs = [r for r in _read_jsonl(h.hdir / "reviews.jsonl") if r.get("feature") == f["id"] and r.get("kind") != "start"]
+    every = _read_jsonl(h.hdir / "reviews.jsonl")
+    launches = {r.get("id") for r in every if r.get("kind") == "start"}
+    recs = [r for r in every if r.get("feature") == f["id"] and r.get("kind") != "start"]
     if not recs:
         return False, f"no hk-reviewer verdict has been recorded for {f['id']}"
     fp = review_fingerprint(h, f)
     current = [r for r in recs if r.get("fingerprint") == fp]
-    if current and current[-1].get("verdict") == "APPROVE":
+
+    def backed(r: dict) -> bool:
+        """An APPROVE written by the SubagentStop hook names its recorded launch; one written by `loop` names its run
+        (2.3.1, review round 3: a record without either was not written by the gate, e.g. by a script)."""
+        if r.get("source") == "loop reviewer":
+            return bool(r.get("run")) and (h.hdir / "runs" / str(r["run"])).is_dir()
+        return bool(r.get("start")) and r.get("start") in launches
+    if current and current[-1].get("verdict") == "APPROVE" and backed(current[-1]):
         return True, f"approved by {current[-1].get('source', 'a reviewer')} at {current[-1].get('ts')}"
+    if current and current[-1].get("verdict") == "APPROVE":
+        return False, "the latest APPROVE is not backed by a recorded hk-reviewer launch or loop run"
     if current:
         note = f" ({current[-1]['note']})" if current[-1].get("note") else ""
         return False, f"the latest review of the current change is {current[-1].get('verdict')}{note}"
-    return False, (f"the code changed after the last review ({recs[-1].get('verdict')} at {recs[-1].get('ts')}): "
+    note = f"; {recs[-1]['note']}" if recs[-1].get("note") else ""
+    return False, (f"the code changed after the last review ({recs[-1].get('verdict')} at {recs[-1].get('ts')}{note}): "
                    f"a review covers only the exact content it saw")
 
 
@@ -2895,8 +2910,19 @@ def _inline_script_writes(command: str, h: Harness) -> bool:
     for line in text.splitlines():
         if re.search(write, line) and any(re.search(n, line, flags) for n in names):
             return True
-    path_var = r"\b\w+\s*=\s*(?:Path\(\s*)?[rbuf]?['\"][^'\"\n]*(?:{})[^'\"\n]*['\"]\s*\)?\s*$"
-    return any(re.search(path_var.format(n), line, flags) for line in text.splitlines() for n in names)
+    # a variable that holds a state path counts only when the script writes through that variable (round 3: a script
+    # that keeps `trace = '.harness/trace.jsonl'` to read it and writes its own report is fine)
+    path_var = r"\b(\w+)\s*=\s*(?:Path\(\s*)?[rbuf]?['\"][^'\"\n]*(?:{})[^'\"\n]*['\"]\s*\)?\s*$"
+    for line in text.splitlines():
+        for n in names:
+            m = re.search(path_var.format(n), line, flags)
+            if m:
+                v = re.escape(m.group(1))
+                if re.search(r"open\(\s*" + v + r"\b[^)]*['\"][wax]|\b" + v + r"\s*\.\s*(?:write_text|write_bytes|open\("
+                             r"[^)]*['\"][wax]|unlink|rename|replace)|(?:replace|rename|copy\w*|move|dump)\([^)]*\b" + v + r"\b",
+                             text):
+                    return True
+    return False
 
 
 def _shell_writes(command: str, target_re: str) -> bool:
@@ -3410,9 +3436,19 @@ def cmd_hook_guard(h: Harness, args) -> int:
         bypass = _bypass_reason(raw_command, command)
         deleted = _deleted_test(command) if h.cfg.get("checker_guard", "ask") == "ask" else None
         read_only = all(re.match(r"(?:grep|rg|ag|findstr|select-string|sls|cat|type|less|more|head|tail|wc|"
-                                 r"git\s+(?:log|show|diff|grep|blame|status))\b", seg, re.I)
+                                 r"get-content|gc|git\s+(?:log|show|diff|grep|blame|status))\b", seg, re.I)
                         for _, seg in _split_segments(_normalize_shell(command)))
-        if not read_only and (re.search(HOOK_COMMAND_RE, command, re.I) or re.search(HOOK_COMMAND_RE, raw_command, re.I)):
+        # the script text of `python -c` / heredoc / stdin is code, so it is read raw; elsewhere quoted prose (a commit
+        # message that mentions hook-stop, a `pytest -k "hook-stop"` filter) is not a command (2.3.1, review round 3)
+        script = re.search(r"\b(python3?|py|node)\b[^|;&\n]*(\s-[ce]\b|\s-(?:\s|$)|<<)", raw_command)
+        hook_text = raw_command if script else command
+        imports_runtime = script and re.search(r"\bimport\s+harness\b|\bfrom\s+harness\s+import|scripts[\\/]+harness"
+                                               r"|\bharness_kit\b|\brunpy\b|SourceFileLoader|spec_from_file_location",
+                                               raw_command)
+        if imports_runtime:
+            decision, reason = "deny", ("a script that imports the harness runtime can rewrite its records; run "
+                                        "`python scripts/harness.py <command>` instead")
+        elif not read_only and re.search(HOOK_COMMAND_RE, hook_text, re.I):
             decision, reason = "deny", ("hook commands are run by Claude Code with its own payload; running one by hand "
                                         "could forge a review verdict or session record")
         elif bypass:
@@ -3505,6 +3541,10 @@ def cmd_hook_subagent_stop(h: Harness, args) -> int:
             verdict, extra["note"] = "UNCERTAIN", problem
         elif start and start.get("fingerprint") != review_fingerprint(h, f):
             verdict, extra["note"] = "UNCERTAIN", "the code changed while the review ran: the approval covers older content"
+    if start and start.get("fingerprint"):
+        # the verdict is about the content the review started on: a late verdict of an older review must not cover
+        # (or overwrite the verdict on) the current content
+        extra["fingerprint"] = start["fingerprint"]
     record_review(h, f, verdict, "hk-reviewer", session=payload.get("session_id"), agent_id=payload.get("agent_id"),
                   **extra)
     return 0
@@ -3515,31 +3555,43 @@ def _claude_projects_dir() -> Path:
     return (Path(base) if base else Path.home() / ".claude") / "projects"
 
 
-def _transcript_texts(path: Path) -> tuple[str, str]:
-    """(first user message, last assistant message) of a Claude Code JSONL transcript."""
-    first, last = "", ""
+def _transcript_texts(path: Path) -> tuple[list[str], float | None, str]:
+    """(text blocks of the first real user message, its time as epoch seconds, last assistant message) of a Claude Code
+    JSONL transcript. `isMeta` entries (injected context) are skipped; on Claude Code 2.1.287 the first user entry is
+    the Agent tool's prompt even with a CLAUDE.md (that arrives as `attachment` entries)."""
+    first: list[str] = []
+    started, last = None, ""
     for line in path.read_text(encoding="utf-8", errors="replace").splitlines():
         try:
             e = json.loads(line)
         except ValueError:
             continue
-        msg = e.get("message") if isinstance(e, dict) and isinstance(e.get("message"), dict) else {}
+        if not isinstance(e, dict) or e.get("isMeta"):
+            continue
+        msg = e.get("message") if isinstance(e.get("message"), dict) else {}
         content = msg.get("content")
-        text = content if isinstance(content, str) else " ".join(
-            str(b.get("text", "")) for b in content or [] if isinstance(b, dict) and b.get("type") == "text")
-        if e.get("type") == "user" and not first and text:
-            first = text
-        elif e.get("type") == "assistant" and text:
-            last = text
-    return first, last
+        blocks = [content] if isinstance(content, str) else [
+            str(b.get("text", "")) for b in content or [] if isinstance(b, dict) and b.get("type") == "text"]
+        blocks = [b for b in blocks if b.strip()]
+        if e.get("type") == "user" and not first and blocks:
+            first = blocks
+            try:
+                started = _dt.datetime.fromisoformat(str(e.get("timestamp", "")).replace("Z", "+00:00")).timestamp()
+            except ValueError:
+                started = None
+        elif e.get("type") == "assistant" and blocks:
+            last = " ".join(blocks)
+    return first, started, last
 
 
 def _authenticate_review(h: Harness, f: dict | None, payload: dict, verdict: str = "APPROVE") -> tuple[dict | None, str | None]:
-    """An APPROVE counts only when Claude Code's own transcript of the reviewer backs it (2.3.1, review round 2): the
+    """An APPROVE counts only when Claude Code's own transcript of the reviewer backs it (2.3.1, review rounds 2–3): the
     transcript lies in Claude Code's projects folder, its last assistant message carries the same verdict, and its first
-    user message is the prompt of a recorded hk-reviewer launch for this feature that no earlier verdict used (oldest
-    first, so overlapping reviewers are paired with their own launch). Checked on Claude Code 2.1.287: at SubagentStop
-    the subagent's transcript already holds both messages. Returns (the matched launch, problem)."""
+    user message is the prompt of a recorded hk-reviewer launch for this feature that no earlier verdict used. Among
+    such launches the one made last *before the transcript started* is its own — right for any finish order of
+    overlapping reviewers with identical prompts, and an abandoned launch (denied, crashed) is simply never chosen.
+    Checked on Claude Code 2.1.287: at SubagentStop the transcript already holds the prompt (with its timestamp) and the
+    final message. Returns (the matched launch, problem)."""
     raw = str(payload.get("agent_transcript_path") or "")
     if not raw:
         return None, "no subagent transcript in the hook payload"
@@ -3550,21 +3602,32 @@ def _authenticate_review(h: Harness, f: dict | None, payload: dict, verdict: str
         inside = False
     if not inside or path.suffix != ".jsonl" or not path.is_file():
         return None, "the transcript is not a Claude Code subagent transcript"
-    first, last = _transcript_texts(path)
+    first, started, last = _transcript_texts(path)
     problem = None
     if parse_verdict(last) != verdict:
         problem = f"the transcript's last message does not carry the {verdict}"
     if not f:
         return None, problem
+
+    def same_prompt(r: dict) -> bool:
+        if r.get("prompt"):
+            want = str(r["prompt"]).strip()
+            return any(b.strip() == want for b in first) or want in "\n".join(first)
+        return hashlib.sha256(" ".join(first).strip().encode("utf-8")).hexdigest()[:16] == r.get("prompt_sha256")
     recs = _read_jsonl(h.hdir / "reviews.jsonl")
     used = {r.get("start") for r in recs if r.get("kind") != "start" and r.get("start")}
-    digest = hashlib.sha256(first.strip().encode("utf-8")).hexdigest()[:16]
-    recent = time.time() - 6 * 3600  # a launch whose reviewer never reported back must not pair with a later run forever
-    starts = [r for r in recs if r.get("kind") == "start" and r.get("feature") == f["id"] and r.get("id") not in used
-              and r.get("prompt_sha256") == digest and float(r.get("epoch") or 0) >= recent]
-    if not starts:
+    recent = time.time() - 6 * 3600
+    launches = [r for r in recs if r.get("kind") == "start" and r.get("feature") == f["id"]
+                and float(r.get("epoch") or 0) >= recent and same_prompt(r)]
+    if started is not None:  # the transcript begins after the PreToolUse hook recorded its launch (ms timestamps)
+        launches = [r for r in launches if float(r.get("epoch") or 0) <= started + 0.05]
+    if not launches:
         return None, problem or "no recorded hk-reviewer launch matches this transcript's prompt"
-    return starts[0], problem
+    own = max(launches, key=lambda r: float(r.get("epoch") or 0))
+    if own.get("id") in used:
+        return None, problem or ("this transcript belongs to a review that already reported: a reviewer continued "
+                                 "with SendMessage is not a new review — launch a fresh hk-reviewer")
+    return own, problem
 
 
 def _guard_subagent(h: Harness, tin: dict, payload: dict) -> tuple[str | None, str | None]:
@@ -3585,6 +3648,7 @@ def _guard_subagent(h: Harness, tin: dict, payload: dict) -> tuple[str | None, s
         rec = {"ts": now_iso(), "epoch": time.time(), "kind": "start", "feature": active[0]["id"],
                "id": str(payload.get("tool_use_id") or f"start-{time.time()}"),
                "prompt_sha256": hashlib.sha256(prompt.strip().encode("utf-8")).hexdigest()[:16],
+               "prompt": prompt.strip()[:4000],
                "fingerprint": review_fingerprint(h, active[0]), "session": payload.get("session_id")}
         with (h.hdir / "reviews.jsonl").open("a", encoding="utf-8") as fh:
             fh.write(json.dumps(rec, ensure_ascii=False) + "\n")

@@ -62,6 +62,11 @@ _Auto-updated by `harness.py handoff` at 2026-10-16T15:53:07+07:00_
   Code's own subagent transcript (second probe on 2.1.287 confirmed its content at SubagentStop), launch/verdict
   pairing, every tracked change counted, fewer false positives; threat model written down in docs/DECISIONS.md.
   `ReviewRound2Tests` (4, all failing on 584b061). 154 tests. Review round 3 follows. Still local, not pushed.
+- [x] 2026-10-16: review round 3 → **REJECT** on one major issue (identical-prompt reviewers mispaired when the newer
+  finishes first); no cheap single-step bypass found within the threat model. V024: time-based launch pairing (third
+  probe: transcripts carry timestamps, CLAUDE.md arrives as attachments), verdicts recorded under the reviewed content's
+  fingerprint, only backed APPROVEs count, runtime-importing scripts denied. `ReviewRound3Tests` (8; 6 fail on fa05e40).
+  162 tests. Review round 4 follows.
 
 ## In Progress
 - [ ] (none)
