@@ -966,9 +966,17 @@
       "category": "feature",
       "behavior": "2.2.0: the interactive guard denies hook bypasses (git --no-verify, commit -n, core.hooksPath, GIT_CONFIG_* env, claude --safe-mode/--bare, CLAUDE_CONFIG_DIR, disableAllHooks) and asks before edits that weaken the checker (lint/test/CI config, assertions removed or skips added in an existing test file, deleting a test file); config checker_guard ask|off",
       "verification": "python -m unittest tests.test_v2.CheckerGuardTests -q",
-      "status": "not_started",
+      "status": "passing",
       "depends_on": [],
-      "evidence": null,
+      "evidence": {
+        "verified_at": "2026-10-16T15:30:49+07:00",
+        "commit": "3212eae",
+        "command": "python -m unittest tests.test_v2.CheckerGuardTests -q",
+        "exit_code": 0,
+        "duration_s": 8.5,
+        "project_check": "quick",
+        "output_tail": "----------------------------------------------------------------------\nRan 3 tests in 7.889s\n\nOK"
+      },
       "scope": [
         "harness_kit/*",
         "scripts/harness.py",
@@ -977,7 +985,9 @@
         "docs/*",
         "*.md"
       ],
-      "priority": 15
+      "priority": 15,
+      "activated_at": "2026-10-16T15:25:02+07:00",
+      "activated_commit": "3212eaeff0df87909e6e3584a541d70bac5442d7"
     },
     {
       "id": "V016",

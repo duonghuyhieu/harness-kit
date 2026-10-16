@@ -645,5 +645,64 @@ class TrivialVerificationTests(HarnessProjectCase):
         self.assertIn("tests/test_empty.py is named by the verification command but contains no assertion", out)
 
 
+class CheckerGuardTests(HarnessProjectCase):
+    """V015: the guard denies hook bypasses and asks before edits that weaken the checker."""
+
+    def decide(self, payload: dict) -> str | None:
+        _, out, _ = run_dispatcher(self.root, "guard", payload)
+        self.assertNotIn('"allow"', out)
+        return hook_output(out).get("permissionDecision")
+
+    def bash(self, command: str, tool: str = "Bash") -> str | None:
+        return self.decide({"tool_name": tool, "tool_input": {"command": command}})
+
+    def edit(self, rel: str, old: str, new: str) -> str | None:
+        return self.decide({"tool_name": "Edit", "tool_input": {"file_path": str(self.root / rel), "old_string": old,
+                                                                "new_string": new}})
+
+    def test_hook_bypasses_are_denied_in_every_configuration(self):
+        set_config(self.root, checker_guard="off", scope_guard="off", instruction_guard="off")
+        for cmd in ("git commit --no-verify -m x", "git commit -nm x", "git -c core.hooksPath=/dev/null commit -m x",
+                    "git config core.hooksPath .nohooks", "GIT_CONFIG_COUNT=1 git commit -m x",
+                    'bash -c "git commit --no-verify -m x"', "claude --safe-mode -p hi", "git push --no-verify",
+                    "CLAUDE_CONFIG_DIR=/tmp/x claude -p hi", "echo '{\"disableAllHooks\": true}' > .claude/settings.local.json"):
+            self.assertEqual(self.bash(cmd), "deny", cmd)
+        self.assertEqual(self.bash("$env:GIT_CONFIG_COUNT=1; git commit -m x", "PowerShell"), "deny")
+        for cmd in ('git commit -m "explain the --no-verify policy"', "git config --get core.hooksPath", "git push -n",
+                    "git log --grep commit -n 5", "git commit --amend -m x"):
+            self.assertIsNone(self.bash(cmd), cmd)
+        outside = Path(self._tmp.name).parent / "user-settings.json"  # e.g. ~/.claude/settings.json
+        payload = {"tool_name": "Write", "tool_input": {"file_path": str(outside), "content": '{"disableAllHooks": true}'}}
+        self.assertEqual(self.decide(payload), "deny")
+
+    def test_checker_config_edits_ask(self):
+        (self.root / "pytest.ini").write_text("[pytest]\naddopts = -q\n", encoding="utf-8")
+        self.assertEqual(self.edit("pytest.ini", "addopts = -q", "addopts = -q -k 'not slow'"), "ask")
+        self.assertEqual(self.edit("pyproject.toml", "[tool.ruff]\n", "[tool.ruff]\nignore = ['E']\n"), "ask")
+        self.assertIsNone(self.edit("pyproject.toml", 'name="app"', 'name="app2"'))  # not checker settings
+        (self.root / "package.json").write_text('{\n  "name": "a",\n  "scripts": {\n    "test": "jest"\n  }\n}\n',
+                                                encoding="utf-8")
+        self.assertEqual(self.edit("package.json", '"test": "jest"', '"test": "jest --passWithNoTests"'), "ask")
+        self.assertIsNone(self.edit("package.json", '"name": "a"', '"name": "b"'))
+        new_rules = {"tool_name": "Write", "tool_input": {"file_path": str(self.root / ".harness/rules.json"),
+                                                          "content": "[]"}}
+        self.assertEqual(self.decide(new_rules), "ask")
+        set_config(self.root, checker_guard="off")
+        self.assertIsNone(self.edit("pytest.ini", "addopts = -q", "addopts = -q -x"))
+
+    def test_loosening_or_deleting_tests_asks(self):
+        test = "tests/test_logic.py"  # def test_x():\n    assert True\n
+        self.assertEqual(self.edit(test, "    assert True", "    pass"), "ask")
+        self.assertEqual(self.edit(test, "    assert True", "    # assert True"), "ask")  # commented out
+        self.assertEqual(self.edit(test, "def test_x():", "@pytest.mark.skip\ndef test_x():"), "ask")
+        self.assertIsNone(self.edit(test, "    assert True", "    assert True\n    assert 1 == 1"))  # stronger
+        new_file = {"tool_name": "Write", "tool_input": {"file_path": str(self.root / "tests/test_new.py"),
+                                                         "content": "def test_y():\n    pass\n"}}
+        self.assertIsNone(self.decide(new_file))  # a new test file never weakens an existing check
+        self.assertEqual(self.bash("rm tests/test_logic.py"), "ask")
+        self.assertEqual(self.bash("git rm -r tests"), "ask")
+        self.assertIsNone(self.bash("rm -rf build"))
+
+
 if __name__ == "__main__":
     unittest.main()

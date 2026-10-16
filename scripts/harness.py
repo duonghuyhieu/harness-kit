@@ -30,6 +30,7 @@ from __future__ import annotations
 import argparse
 import contextlib
 import datetime as _dt
+import difflib
 import fnmatch
 import hashlib
 import io
@@ -2489,6 +2490,40 @@ SHELL_WRITE_RE = (r"(>>?|\btee\b|\bsed\s+(-[a-zA-Z]*i|--in-place)|Set-Content|Ad
                   r"\bgit\s+(checkout|restore)\b)[^|;&\n]*")
 SHELL_COPY_RE = r"\b(cp|mv|Copy-Item|Move-Item)\b[^|;&\n]*[\s/]"  # the target is the destination: the last argument
 
+# Switching checks off is the user's action, never the agent's: always denied, in every configuration (V015; survey of
+# nah, ECC block-no-verify, 2026-10-16). Matched on the command with quoted prose removed, plus `-c "..."` payloads.
+_GIT_SUB = r"\bgit(?:\.exe)?(?:\s+(?:-[Cc]\s*\S+|--[\w-]+(?:=\S+)?))*\s+"  # git, its global options, then the subcommand
+BYPASS_PATTERNS = [
+    (_GIT_SUB + r"commit\b[^|;&\n]*\s(--no-verify\b|-(?!-)[a-zA-Z]*n[a-zA-Z]*\b)",
+     "`git commit --no-verify`/`-n` skips the repository's commit hooks"),
+    (_GIT_SUB + r"(push|merge|rebase|am|cherry-pick|revert|pull|switch|checkout)\b[^|;&\n]*\s--no-verify\b",
+     "`--no-verify` skips the repository's git hooks"),
+    (r"\bcore\.hookspath\b", "changing core.hooksPath switches the repository's git hooks off"),
+    (r"\bGIT_CONFIG_(COUNT|PARAMETERS|KEY_\d+|VALUE_\d+)\b",
+     "GIT_CONFIG_* variables rewrite git's configuration (and its hooks) for the command"),
+    (r"\bclaude(\.exe)?\b[^|;&\n]*\s--(safe-mode|bare)\b", "starting Claude Code without its hooks bypasses the harness"),
+]
+# matched on the raw command (they may sit inside quoted JSON or an echo)
+BYPASS_RAW_PATTERNS = [
+    (r"\bCLAUDE_CONFIG_DIR\b", "pointing Claude Code at another configuration folder bypasses this project's hooks"),
+    (r"[\"']?disableAllHooks[\"']?\s*[:=]\s*\$?true", "disableAllHooks switches every hook off, the harness included"),
+]
+HOOKSPATH_READ_RE = r"\bgit\b[^|;&\n]*\sconfig\b[^|;&\n]*\s(--get(-all|-regexp)?|--list|-l|--show-origin)\b"
+NESTED_SHELL_RE = r"(?:\b(?:ba|z|da)?sh|\bcmd|\bpwsh|\bpowershell)(?:\.exe)?\s+(?:-c|/c|-Command)\s+([\"'])(.*?)\1"
+
+# Files that define how the work is checked: editing an existing one can make a red check green (V015).
+CHECKER_FILES = ["pytest.ini", "tox.ini", ".coveragerc", "mypy.ini", ".mypy.ini", ".flake8", "ruff.toml", ".ruff.toml",
+                 ".pylintrc", "pylintrc", ".eslintrc*", "eslint.config.*", ".prettierrc*", "prettier.config.*",
+                 "jest.config.*", "vitest.config.*", "karma.conf.*", "playwright.config.*", "cypress.config.*",
+                 ".golangci.y*ml", "phpunit.xml*", "phpstan.neon*", ".rubocop.yml", "rustfmt.toml", "clippy.toml",
+                 ".pre-commit-config.yaml", "lefthook.y*ml", "Jenkinsfile", "azure-pipelines.yml", ".gitlab-ci.yml",
+                 ".github/workflows/*", ".circleci/*", ".husky/*", ".harness/rules.json"]
+# files that hold checker settings next to other things: only changes inside the checker part count
+CHECKER_SECTION_RE = (r"^\s*\[\s*(tool\.(pytest|ruff|mypy|coverage|pylint|black|isort|flake8|pyright|bandit)|"
+                      r"tool:pytest|flake8|mypy|coverage|pylint|pycodestyle)\b")
+CHECKER_JSON_KEY_RE = (r"\"(test|lint|typecheck|type-check|check|ci|pretest|posttest|format:check|verify)[\w:-]*\"\s*:"
+                       r"|\"(jest|eslintConfig|prettier|vitest|mocha|ava|nyc|c8)\"\s*:")
+
 
 INSTRUCTION_FILES = ("AGENTS.md", "CLAUDE.md", "CLAUDE.local.md")
 INSTRUCTION_DIRS = (".claude/agents/", ".claude/skills/", ".claude/rules/", ".claude/output-styles/")
@@ -2515,6 +2550,106 @@ def _shell_writes(command: str, target_re: str) -> bool:
     flags = re.I if os.name == "nt" else 0
     return bool(re.search(SHELL_WRITE_RE + target_re, command, flags) or
                 re.search(SHELL_COPY_RE + target_re + r"\s*($|[|;&\n])", command, flags))
+
+
+def _bypass_reason(raw: str, scan: str) -> str | None:
+    """Why the shell command switches a check off (git hooks, Claude Code hooks), or None."""
+    texts = [scan] + [_shell_scan_text(m[1]) for m in re.findall(NESTED_SHELL_RE, raw, re.S | re.I)]
+    for text in texts:
+        for pattern, why in BYPASS_PATTERNS:
+            if re.search(pattern, text, re.I) and not ("hookspath" in pattern and re.search(HOOKSPATH_READ_RE, text, re.I)):
+                return why
+    for pattern, why in BYPASS_RAW_PATTERNS:
+        if re.search(pattern, raw):
+            return why
+    return None
+
+
+def _edit_bypass_reason(tool: str, tin: dict) -> str | None:
+    """A Write/Edit that switches hooks off (any settings file, also outside the project)."""
+    if tool == "Write":
+        text = str(tin.get("content", ""))
+    elif tool == "MultiEdit":
+        text = "\n".join(str(e.get("new_string", "")) for e in tin.get("edits") or [] if isinstance(e, dict))
+    else:
+        text = str(tin.get("new_string", tin.get("new_source", "")))
+    for pattern, why in BYPASS_RAW_PATTERNS:
+        if re.search(pattern, text):
+            return why
+    return None
+
+
+_COMMENT_LINE = re.compile(r"^\s*(#|//|--|;|/\*|\*)")
+
+
+def _count_matches(pattern: str, lines: list[str]) -> int:
+    return sum(len(re.findall(pattern, line)) for line in lines if not _COMMENT_LINE.match(line))
+
+
+def _changed_lines(old: str, new: str) -> tuple[list[tuple[int, str]], list[tuple[int, str]]]:
+    """(index, text) of the lines an edit removes from `old` and adds in `new`."""
+    a, b = old.splitlines(), new.splitlines()
+    removed, added = [], []
+    for tag, i1, i2, j1, j2 in difflib.SequenceMatcher(None, a, b, autojunk=False).get_opcodes():
+        if tag in ("replace", "delete"):
+            removed += [(i, a[i]) for i in range(i1, i2)]
+        if tag in ("replace", "insert"):
+            added += [(j, b[j]) for j in range(j1, j2)]
+    return removed, added
+
+
+def _section_of(lines: list[str], idx: int) -> str:
+    """The `[section]` header an INI/TOML line belongs to."""
+    for k in range(min(idx, len(lines) - 1), -1, -1):
+        if re.match(r"^\s*\[", lines[k]):
+            return lines[k]
+    return ""
+
+
+def _weakens_checker(h: Harness, rel: str, tool: str, tin: dict) -> str | None:
+    """Why an edit of an existing file can make a red check green (lint/test/CI config, harness rules, assertions
+    removed or skips added in a test file), or None. New files add checks; they never weaken an existing one."""
+    p = h.root / rel
+    if tool == "NotebookEdit" or not p.is_file():
+        return None
+    current = p.read_text(encoding="utf-8", errors="replace")
+    proposed = _proposed_text(current, tool, tin)
+    if proposed is None or proposed == current:
+        return None
+    removed, added = _changed_lines(current, proposed)
+    base = rel.rsplit("/", 1)[-1]
+    approve = "approve only if you asked for this change (relaxing a check to make it pass is not a fix)"
+    if any(fnmatch.fnmatch(rel, g) or ("/" not in g and fnmatch.fnmatch(base, g)) for g in CHECKER_FILES):
+        return f"{rel} defines how the work is checked (lint, tests, CI, harness rules): {approve}"
+    if base in ("pyproject.toml", "setup.cfg"):
+        old_l, new_l = current.splitlines(), proposed.splitlines()
+        if any(re.match(CHECKER_SECTION_RE, _section_of(old_l, i), re.I) for i, _ in removed) or \
+                any(re.match(CHECKER_SECTION_RE, _section_of(new_l, j), re.I) for j, _ in added):
+            return f"the edit changes checker settings in {rel} (pytest, ruff, mypy, coverage...): {approve}"
+    if base == "package.json" and any(re.search(CHECKER_JSON_KEY_RE, line) for _, line in removed + added):
+        return f"the edit changes test/lint scripts or checker settings in {rel}: {approve}"
+    if TEST_FILE_RE.search(rel):
+        lost = _count_matches(ASSERT_RE, [l for _, l in removed]) - _count_matches(ASSERT_RE, [l for _, l in added])
+        skips = _count_matches(SKIP_RE, [l for _, l in added]) - _count_matches(SKIP_RE, [l for _, l in removed])
+        what = [f"removes {lost} assertion(s)"] * (lost > 0) + [f"adds {skips} skip marker(s)"] * (skips > 0)
+        if what:
+            return (f"the edit {' and '.join(what)} in the test file {rel}: tests are never loosened to get a pass — "
+                    f"approve only if the test itself is wrong")
+    return None
+
+
+TEST_DELETE_RE = r"(?:^|[|;&(\n]|\s)(?:rm|del|erase|rmdir|rd|Remove-Item|ri|git\s+rm)\b([^|;&\n]*)"
+
+
+def _deleted_test(scan: str) -> str | None:
+    """A test file or test folder a shell command deletes, or None."""
+    for m in re.finditer(TEST_DELETE_RE, scan, re.I):
+        for tok in m.group(1).split():
+            t = tok.strip("'\"").rstrip("/")
+            if t and not t.startswith("-") and (TEST_FILE_RE.search(t) or t.rsplit("/", 1)[-1] in
+                                                ("tests", "test", "__tests__", "spec", "specs")):
+                return t
+    return None
 
 
 def _stdin_text() -> str:
@@ -2772,6 +2907,13 @@ def cmd_hook_guard(h: Harness, args) -> int:
         return 0
     decision, reason = None, None
     if tool in ("Write", "Edit", "MultiEdit", "NotebookEdit"):
+        bypass = _edit_bypass_reason(tool, tin)
+        if bypass:  # any settings file, inside the project or not
+            h.trace("hook-guard", "deny", tool=tool, reason=bypass, session=payload.get("session_id"))
+            _emit("PreToolUse", permissionDecision="deny",
+                  permissionDecisionReason=f"harness-kit: {bypass}. Switching checks off is the user's action, not the "
+                                           f"agent's: ask the user to do it if it is really wanted.")
+            return 0
         rel = _rel_to_root(h, str(tin.get("file_path") or tin.get("notebook_path") or ""))
         if rel is None:
             return 0
@@ -2786,6 +2928,10 @@ def cmd_hook_guard(h: Harness, args) -> int:
         if not decision and key in {_path_key(p) for p in GUARD_CONFIG_FILES}:
             decision, reason = "ask", (f"{rel} configures the harness itself (commands, hooks, guards): approve only "
                                        f"if you asked for this change")
+        if not decision and h.cfg.get("checker_guard", "ask") == "ask":
+            why = _weakens_checker(h, rel, tool, tin)
+            if why:
+                decision, reason = "ask", why
         if not decision and h.cfg.get("instruction_guard", "ask") == "ask" and _is_instruction_file(key):
             decision, reason = "ask", (f"{rel} is an instruction file every later session trusts: approve only if this "
                                        f"change was asked for (instructions written by an agent are input to review)")
@@ -2807,10 +2953,18 @@ def cmd_hook_guard(h: Harness, args) -> int:
         raw_command = str(tin.get("command", ""))
         command = _shell_scan_text(raw_command)
         targets = [re.escape(h.cfg["feature_list"])] + [re.escape(p) for p in HOOK_STATE_FILES]
-        if any(_shell_writes(command, t) for t in targets) or _inline_script_writes(raw_command, h):
+        bypass = _bypass_reason(raw_command, command)
+        deleted = _deleted_test(command) if h.cfg.get("checker_guard", "ask") == "ask" else None
+        if bypass:
+            decision, reason = "deny", (f"{bypass}. Switching checks off is the user's action, not the agent's: fix "
+                                        f"what the check reports, or ask the user")
+        elif any(_shell_writes(command, t) for t in targets) or _inline_script_writes(raw_command, h):
             decision, reason = "deny", "harness state files are changed only through scripts/harness.py"
         elif any(_shell_writes(command, re.escape(p)) for p in GUARD_CONFIG_FILES):
             decision, reason = "ask", "the command writes a file that configures the harness itself"
+        elif deleted:
+            decision, reason = "ask", (f"the command deletes the test {deleted}: tests are never deleted to get a pass "
+                                       f"— approve only if you asked for it")
     if not decision:
         return 0
     h.trace("hook-guard", decision, tool=tool, reason=reason, session=payload.get("session_id"))
