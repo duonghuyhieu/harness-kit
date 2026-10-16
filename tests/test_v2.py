@@ -16,7 +16,7 @@ from pathlib import Path
 sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
 
 from harness_kit import installer, runtime, scaffold  # noqa: E402
-from tests.test_kit import PY, make_python_project, run_rt, set_commands, set_config  # noqa: E402
+from tests.test_kit import OK_VERIFY, PY, make_python_project, run_rt, set_commands, set_config  # noqa: E402
 
 
 def run_dispatcher(root: Path, event: str, payload: dict, env: dict | None = None) -> tuple[int, str, str]:
@@ -86,7 +86,7 @@ class ClaudeHookTests(unittest.TestCase):
         self.assertEqual(hook_output(out)["permissionDecision"], "deny")
 
     def test_guard_never_allows_and_asks_outside_scope(self):
-        run_rt(self.root, "add", "--id", "F1", "--behavior", "b", "--verify", f"{PY} -c pass", "--scope", "app/*")
+        run_rt(self.root, "add", "--id", "F1", "--behavior", "b", "--verify", OK_VERIFY, "--scope", "app/*")
         run_rt(self.root, "next", "--id", "F1")
         out = hook_output(run_dispatcher(self.root, "guard", self.write("README.md"))[1])
         self.assertEqual(out["permissionDecision"], "ask")
@@ -204,7 +204,7 @@ class ClaudeHookTests(unittest.TestCase):
 
     def test_stop_requires_verification_after_the_last_change(self):
         """R11: finishing a turn with changes the active feature's verification has not seen is blocked once."""
-        run_rt(self.root, "add", "--id", "F1", "--behavior", "b", "--verify", f"{PY} -c pass", "--scope", "app/*")
+        run_rt(self.root, "add", "--id", "F1", "--behavior", "b", "--verify", OK_VERIFY, "--scope", "app/*")
         run_rt(self.root, "next", "--id", "F1")
         run_rt(self.root, "start", "--no-check")
         (self.root / "app" / "new_mod.py").write_text("X = 1\n", encoding="utf-8")
@@ -248,7 +248,7 @@ class ClaudeHookTests(unittest.TestCase):
         self.assertTrue(runtime.is_generated("src/pkg/__pycache__/mod.cpython-312.pyc"))
         self.assertTrue(runtime.is_generated("Main.class"))
         self.assertFalse(runtime.is_generated("src/pkg/mod.py"))
-        run_rt(self.root, "add", "--id", "F1", "--behavior", "b", "--verify", f"{PY} -c pass", "--scope", "app/*")
+        run_rt(self.root, "add", "--id", "F1", "--behavior", "b", "--verify", OK_VERIFY, "--scope", "app/*")
         cache = self.root / "app" / "__pycache__"
         cache.mkdir(exist_ok=True)
         (cache / "x.cpython-312.pyc").write_bytes(b"old")
@@ -273,7 +273,7 @@ class ClaudeHookTests(unittest.TestCase):
 
     def test_stop_flags_work_on_a_feature_nobody_activated(self):
         """Experiment 2 (sonnet): code for F1 written without `next`/`verify`; the next session redid it."""
-        run_rt(self.root, "add", "--id", "F1", "--behavior", "b", "--verify", f"{PY} -c pass", "--scope", "app/*")
+        run_rt(self.root, "add", "--id", "F1", "--behavior", "b", "--verify", OK_VERIFY, "--scope", "app/*")
         run_rt(self.root, "start", "--no-check")
         (self.root / "app" / "feature_code.py").write_text("X = 2\n", encoding="utf-8")
         code, _, err = run_dispatcher(self.root, "stop", {"session_id": "s9"})
@@ -282,8 +282,8 @@ class ClaudeHookTests(unittest.TestCase):
 
     def test_verify_explains_a_red_baseline_from_future_features(self):
         """Experiment 2: up-front tests of later features keep the project check red; verify must say why."""
-        run_rt(self.root, "add", "--id", "F1", "--behavior", "b", "--verify", f"{PY} -c pass")
-        run_rt(self.root, "add", "--id", "F2", "--behavior", "c", "--verify", f"{PY} -c pass")
+        run_rt(self.root, "add", "--id", "F1", "--behavior", "b", "--verify", OK_VERIFY)
+        run_rt(self.root, "add", "--id", "F2", "--behavior", "c", "--verify", OK_VERIFY)
         set_commands(self.root, test=f"{PY} -c \"import sys; sys.exit(1)\"")
         run_rt(self.root, "next", "--id", "F1")
         code, out = run_rt(self.root, "verify", "F1")
@@ -516,7 +516,7 @@ class InstallerTests(unittest.TestCase):
             root = Path(d)
             make_python_project(root)
             quiet_install(root)
-            run_rt(root, "add", "--id", "F1", "--behavior", "b", "--verify", f"{PY} -c pass")
+            run_rt(root, "add", "--id", "F1", "--behavior", "b", "--verify", OK_VERIFY)
             picked = runtime._pick_loop_feature(runtime.Harness(root), None)
             self.assertEqual(picked["id"], "F1")
 
@@ -568,6 +568,81 @@ class InstallerTests(unittest.TestCase):
                 if rel.startswith(".claude/agents/"):
                     self.assertTrue(fm.get("tools"), rel)
             self.assertNotIn("{{", content, rel)
+
+
+class HarnessProjectCase(unittest.TestCase):
+    """A temporary Python project with the kit installed and a passing project check."""
+
+    def setUp(self):
+        self._tmp = tempfile.TemporaryDirectory()
+        self.root = Path(self._tmp.name)
+        make_python_project(self.root)
+        quiet_install(self.root)
+        set_commands(self.root, test=OK_VERIFY)
+
+    def tearDown(self):
+        self._tmp.cleanup()
+
+    def features(self) -> dict:
+        data = json.loads((self.root / "feature_list.json").read_text(encoding="utf-8"))
+        return {f["id"]: f for f in (data["features"] if isinstance(data, dict) else data)}
+
+    def set_feature(self, fid: str, **fields) -> None:
+        p = self.root / "feature_list.json"
+        data = json.loads(p.read_text(encoding="utf-8"))
+        for f in data["features"] if isinstance(data, dict) else data:
+            if f["id"] == fid:
+                f.update(fields)
+        p.write_text(json.dumps(data, indent=2), encoding="utf-8")
+
+
+class TrivialVerificationTests(HarnessProjectCase):
+    """V014: a verification command that cannot fail is refused by add, verify and validate."""
+
+    def test_detector(self):
+        for cmd in ("echo ok", "true", "exit 0", "python -c pass", f'{PY} -c "print(1)"', "cd app && echo done",
+                    "pytest || true", "npm test || echo failed", "pytest; exit 0", "pytest | tail -5",
+                    "python -m unittest 2>&1 | tee log", "cmd /c exit 0", ""):
+            self.assertTrue(runtime.trivial_verification(cmd), cmd)
+        for cmd in ("pytest", "python -m unittest discover -s tests -q", "set -o pipefail; pytest | tail -5",
+                    "pytest && echo ok", OK_VERIFY, "cd app && npm test", 'grep -q "a|b" f.txt', "pytest; echo done",
+                    "curl -fsS http://localhost:8000/health"):
+            self.assertIsNone(runtime.trivial_verification(cmd), cmd)
+
+    def test_add_refuses_and_warn_mode_allows(self):
+        code, out = run_rt(self.root, "add", "--id", "F1", "--behavior", "b", "--verify", "pytest || true")
+        self.assertEqual(code, 1)
+        self.assertIn("cannot fail", out)
+        self.assertIn("FIX:", out)
+        self.assertNotIn("F1", self.features())
+        set_config(self.root, trivial_verification="warn")
+        code, out = run_rt(self.root, "add", "--id", "F1", "--behavior", "b", "--verify", "echo ok")
+        self.assertEqual(code, 0)
+        self.assertIn("WARNING", out)
+        self.assertIn("F1", self.features())
+
+    def test_verify_refuses_a_trivial_command_set_by_hand(self):
+        run_rt(self.root, "add", "--id", "F1", "--behavior", "b", "--verify", OK_VERIFY)
+        self.set_feature("F1", verification="echo all good")  # not started yet: the guard lets this edit through
+        code, out = run_rt(self.root, "validate")
+        self.assertEqual(code, 1)
+        self.assertIn("cannot fail", out)
+        run_rt(self.root, "next", "--id", "F1")
+        code, out = run_rt(self.root, "verify", "F1")
+        self.assertEqual(code, 1)
+        self.assertIn("cannot fail", out)
+        self.assertEqual(self.features()["F1"]["status"], "active")
+        trace = (self.root / ".harness" / "trace.jsonl").read_text(encoding="utf-8")
+        self.assertIn("trivial verification", trace)
+
+    def test_verify_warns_about_a_test_file_without_assertions(self):
+        (self.root / "tests" / "test_empty.py").write_text(
+            "import unittest\n\n\nclass T(unittest.TestCase):\n    def test_nothing(self):\n        pass\n", encoding="utf-8")
+        run_rt(self.root, "add", "--id", "F1", "--behavior", "b", "--verify", f"{PY} -m unittest tests/test_empty.py")
+        run_rt(self.root, "next", "--id", "F1")
+        code, out = run_rt(self.root, "verify", "F1")
+        self.assertEqual(code, 0, out)
+        self.assertIn("tests/test_empty.py is named by the verification command but contains no assertion", out)
 
 
 if __name__ == "__main__":

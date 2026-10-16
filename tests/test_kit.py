@@ -17,6 +17,8 @@ sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
 from harness_kit import audit, detect, installer, runtime, scaffold  # noqa: E402
 
 PY = f'"{sys.executable}"'
+# a verification command that passes and is not a placeholder (2.2.0 refuses `python -c pass`, `echo ok`, `|| true`)
+OK_VERIFY = f'{PY} -c "assert 1 + 1 == 2"'
 
 
 def run_rt(root: Path, *args: str) -> tuple[int, str]:
@@ -668,7 +670,7 @@ class RuntimeTests(unittest.TestCase):
 
     def test_course_schema_aliases(self):
         (self.root / "feature_list.json").write_text(json.dumps({"features": [
-            {"id": "chat-001", "title": "New chat", "status": "in_progress", "verification": f"{PY} -c \"pass\""}]}),
+            {"id": "chat-001", "title": "New chat", "status": "in_progress", "verification": OK_VERIFY}]}),
             encoding="utf-8")
         code, out = run_rt(self.root, "verify", "chat-001")
         self.assertEqual(code, 0, out)
@@ -749,7 +751,7 @@ class GapFeatureTests(unittest.TestCase):
     # lesson 08 regression: legacy `state` field must still be read
     def test_legacy_state_field_is_read(self):
         (self.root / "feature_list.json").write_text(json.dumps([
-            {"id": "L1", "behavior": "b", "state": "in_progress", "verification": f"{PY} -c \"pass\""}]), encoding="utf-8")
+            {"id": "L1", "behavior": "b", "state": "in_progress", "verification": OK_VERIFY}]), encoding="utf-8")
         code, out = run_rt(self.root, "verify", "L1", "--skip-check")
         self.assertEqual(code, 0, out)
         saved = json.loads((self.root / "feature_list.json").read_text(encoding="utf-8"))
@@ -774,7 +776,7 @@ class GapFeatureTests(unittest.TestCase):
 
     # lesson 07: scope drift
     def test_scope_drift_warns_and_records_evidence(self):
-        run_rt(self.root, "add", "--id", "S1", "--behavior", "b", "--verify", f"{PY} -c \"pass\"", "--scope", "app/core/*")
+        run_rt(self.root, "add", "--id", "S1", "--behavior", "b", "--verify", OK_VERIFY, "--scope", "app/core/*")
         run_rt(self.root, "next", "--id", "S1")
         (self.root / "app" / "core" / "logic.py").write_text("def f():\n    return 2\n", encoding="utf-8")
         (self.root / "app" / "other.py").write_text("x = 1\n", encoding="utf-8")
@@ -785,7 +787,7 @@ class GapFeatureTests(unittest.TestCase):
 
     def test_scope_drift_error_blocks_verify(self):
         set_config(self.root, scope_drift="error")
-        run_rt(self.root, "add", "--id", "S2", "--behavior", "b", "--verify", f"{PY} -c \"pass\"", "--scope", "app/core/*")
+        run_rt(self.root, "add", "--id", "S2", "--behavior", "b", "--verify", OK_VERIFY, "--scope", "app/core/*")
         run_rt(self.root, "next", "--id", "S2")
         (self.root / "app" / "other.py").write_text("x = 1\n", encoding="utf-8")
         code, _ = run_rt(self.root, "verify", "S2")
@@ -795,8 +797,8 @@ class GapFeatureTests(unittest.TestCase):
     # lessons 09-10: verify can require the full check (e2e)
     def test_verify_check_full_runs_e2e(self):
         set_commands(self.root, test=f"{PY} -c \"pass\"", e2e=f"{PY} -c \"raise SystemExit(1)\"")
-        run_rt(self.root, "add", "--id", "Q1", "--behavior", "b", "--verify", f"{PY} -c \"pass\"")
-        run_rt(self.root, "add", "--id", "E1", "--behavior", "b", "--verify", f"{PY} -c \"pass\"", "--verify-check", "full")
+        run_rt(self.root, "add", "--id", "Q1", "--behavior", "b", "--verify", OK_VERIFY)
+        run_rt(self.root, "add", "--id", "E1", "--behavior", "b", "--verify", OK_VERIFY, "--verify-check", "full")
         run_rt(self.root, "next", "--id", "Q1")
         self.assertEqual(run_rt(self.root, "verify", "Q1")[0], 0)  # quick check skips e2e
         run_rt(self.root, "next", "--id", "E1")
@@ -1673,7 +1675,7 @@ def _normalize(text: str, root: Path) -> str:
 
 def runtime_scenarios() -> dict:
     """Every branch of cmd_verify and cmd_exit_check (characterization for R002)."""
-    ok, bad = f"{PY} -c \"print('ok')\"", f"{PY} -c \"raise SystemExit(3)\""
+    ok, bad = OK_VERIFY, f"{PY} -c \"raise SystemExit(3)\""
     out = {}
 
     def scenario(name, setup, *argv):

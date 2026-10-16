@@ -86,6 +86,10 @@ DEFAULT_CONFIG = {
     "instruction_guard": "ask",
     # a crash of the guard hook: "open" (allow, with a visible warning) or "closed" (deny the tool call)
     "guard_failure": "open",
+    # verification commands that can never fail (echo, true, exit 0, `|| true`, `| tail`): "refuse" or "warn"
+    "trivial_verification": "refuse",
+    # edits that weaken the checker (lint/test/CI config; assertions removed or skips added in tests): "ask" | "off"
+    "checker_guard": "ask",
     # dispatcher events switched off for this project, e.g. ["prompt"]; switching off "guard" or "stop" is logged
     "hooks_off": [],
     "activity_max_lines": 2000,
@@ -492,6 +496,10 @@ def validate_features(h: Harness) -> list[str]:
             errs.append(f"{where}: status '{f.get('status')}' is not one of {STATES}")
         if not f.get("verification"):
             errs.append(f"{where}: missing 'verification' (verification command) — the feature has no proof of completion")
+        elif isinstance(f.get("verification"), str) and f.get("status") != "passing" and \
+                h.cfg.get("trivial_verification", "refuse") == "refuse" and trivial_verification(f["verification"]):
+            errs.append(f"{where}: verification `{f['verification']}` cannot fail "
+                        f"({trivial_verification(f['verification'])})")
         if f.get("status") == "passing" and not f.get("evidence"):
             errs.append(f"{where}: passing but has no evidence — only `verify` may mark a feature passing")
     for f in feats:
@@ -631,7 +639,86 @@ def scope_drift(h: Harness, f: dict) -> list[str]:
             if not any(fnmatch.fnmatch(n, g) for g in allowed)]
 
 
-def _require_verifiable(f: dict) -> str:
+# A verification command proves nothing when it cannot fail. Deterministic patterns only (a guardrail, not a proof:
+# `python -c "assert True"` still passes); found in the survey of open-source harnesses, 2026-10-16.
+_NEUTRAL_SEG = re.compile(r"^(cd|pushd|popd|set-location|sl|set\s+-[a-z]+|export\s+\w+=\S*|\w+=\S*)(\s|$)", re.I)
+_NOOP_CODE = r"(?:pass|print\([^)]*\)|console\.log\([^)]*\))"
+_TRIVIAL_SEG = re.compile(
+    r"^(?:true|:|exit(?:\s+/b)?(?:\s+0)?|\$true|(?:echo|printf|write-host|write-output|rem)(?:\s.*)?"
+    r"|cmd(?:\.exe)?\s+/c\s+exit(?:\s+/b)?\s+0"
+    r"|[\"']?(?:[^\s\"']*[\\/])?(?:python3?|py|node)(?:\.exe)?[\"']?(?:\s+-[^\sce]\S*)*\s+-[ce]\s+"
+    r"(?P<q>[\"']?)\s*" + _NOOP_CODE + r"?\s*(?:;\s*" + _NOOP_CODE + r"\s*)*(?P=q))$", re.I)
+_MASKING_PIPE = re.compile(r"\|\s*(tee|tail|head|cat|less|more|sort|uniq|out-host|out-string|select-object)\b", re.I)
+
+
+def _split_segments(cmd: str) -> list[tuple[str, str]]:
+    """(separator before, segment) pairs, splitting on && || ; | and newlines outside quotes."""
+    out, buf, sep, quote, i = [], "", "", "", 0
+    while i < len(cmd):
+        c = cmd[i]
+        if quote:
+            quote = "" if c == quote else quote
+            buf += c
+        elif c in "'\"":
+            quote, buf = c, buf + c
+        elif cmd.startswith(("&&", "||"), i):
+            out.append((sep, buf.strip()))
+            sep, buf = cmd[i:i + 2], ""
+            i += 1
+        elif c in ";|\n":
+            out.append((sep, buf.strip()))
+            sep, buf = ("\n" if c == "\n" else c), ""
+        else:
+            buf += c
+        i += 1
+    out.append((sep, buf.strip()))
+    return [(s, seg) for s, seg in out if seg]
+
+
+def trivial_verification(cmd: str) -> str | None:
+    """Why `cmd` can pass without checking anything, or None. Catches placeholders (only echo/true/exit 0/`python -c
+    pass`), failures masked by `|| true` or a trailing `; exit 0`, and exit codes swallowed by a pipe into tail/tee."""
+    segs = _split_segments(cmd.strip())
+    if not segs:
+        return "it is empty"
+    real = [seg for _, seg in segs if not _NEUTRAL_SEG.match(seg) and not _TRIVIAL_SEG.match(seg)]
+    if not real:
+        return "it only prints, changes directory or exits 0, so it passes whatever the code does"
+    for k, (sep, seg) in enumerate(segs):
+        if sep == "||" and _TRIVIAL_SEG.match(seg):
+            return f"`|| {seg}` turns every failure into a pass"
+        if k == len(segs) - 1 and sep in (";", "\n") and _TRIVIAL_SEG.match(seg) and not seg.lower().startswith(
+                ("echo", "printf", "write-", "rem")):
+            return f"the trailing `{seg}` replaces the exit code of the check before it"
+    if _MASKING_PIPE.search(cmd) and "pipefail" not in cmd:
+        return "a pipe into a pager or filter (tail, tee, head...) returns that program's exit code, not the check's"
+    return None
+
+
+def _trivial_problem(h: Harness, fid: str, ver: str) -> str | None:
+    why = trivial_verification(ver)
+    if not why:
+        return None
+    return (f"{fid}'s verification command `{ver}` cannot fail: {why}.\n  WHY: a check that cannot fail proves nothing "
+            f"(the pass-gate would accept any code).\n  FIX: use a command that exits non-zero when the behavior is wrong "
+            f"— the tests or script for this feature, without `|| true` or a pipe into tail/tee "
+            f"(`set -o pipefail` keeps the exit code).")
+
+
+def _assertion_free_tests(h: Harness, ver: str, cwd: str) -> list[str]:
+    """Test files named by the command that contain no assertion at all (a warning: the heuristic can miss styles)."""
+    out = []
+    for tok in re.findall(r"[\w./\\-]+", ver):
+        rel = tok.replace("\\", "/")
+        if not TEST_FILE_RE.search(rel):
+            continue
+        p = (h.root / cwd / rel)
+        if p.is_file() and not re.search(ASSERT_RE, p.read_text(encoding="utf-8", errors="replace")):
+            out.append(rel)
+    return out
+
+
+def _require_verifiable(f: dict, h: Harness | None = None) -> str:
     """The verification command of an active feature; anything else is a domain error."""
     if f.get("status") != "active":
         raise SystemExit(f"ERROR: {f['id']} is {f.get('status')}. Only an active feature can be verified (run `next --id {f['id']}`).")
@@ -639,6 +726,13 @@ def _require_verifiable(f: dict) -> str:
     if not isinstance(ver, str) or not ver.strip():
         raise SystemExit(f"ERROR: {f['id']} has no automated verification command.\n  FIX: add a 'verification' field with a "
                          f"shell command that exits 0 when the behavior is correct (test, e2e script, curl...).")
+    if h is not None:
+        problem = _trivial_problem(h, f["id"], ver)
+        if problem and h.cfg.get("trivial_verification", "refuse") == "refuse":
+            h.trace("verify", "fail", feature=f["id"], reason="trivial verification")
+            raise SystemExit(f"ERROR: {problem}\n  (block {f['id']}, unblock it, then correct its verification.)")
+        if problem:
+            print(f"WARNING: {problem}")
     return ver
 
 
@@ -714,12 +808,15 @@ def cmd_verify(h: Harness, args) -> int:
     if f.get("status") == "passing":
         print(f"{f['id']} is already passing (state transitions are one-way). Use `check --full` to run regressions.")
         return 0
-    ver = _require_verifiable(f)
+    ver = _require_verifiable(f, h)
     print(f"== verify {f['id']}: {ver}")
     code, out, dur = h.run_shell(ver, f.get("cwd", "."))
     print(tail(out, 30))
     if code != 0:
         return _record_failed_attempt(h, feats, f, code, dur)
+    for rel in _assertion_free_tests(h, ver, f.get("cwd", ".")):
+        print(f"WARNING: {rel} is named by the verification command but contains no assertion: a test that asserts "
+              f"nothing passes whatever the code does.")
     drift, blocked = _check_scope(h, f)
     if blocked:
         return 1
@@ -763,6 +860,11 @@ def cmd_add(h: Harness, args) -> int:
     feats = h.load_features()
     if any(f.get("id") == args.id for f in feats):
         raise SystemExit(f"ERROR: id {args.id} already exists.")
+    problem = _trivial_problem(h, args.id, args.verify) if args.verify else None
+    if problem and h.cfg.get("trivial_verification", "refuse") == "refuse":
+        raise SystemExit(f"ERROR: {problem}")
+    if problem:
+        print(f"WARNING: {problem}")
     item = {"id": args.id, "category": args.category, "behavior": args.behavior, "verification": args.verify,
             "status": "not_started", "depends_on": args.depends or [], "evidence": None}
     if args.out_of_scope:
@@ -1939,6 +2041,11 @@ TEST_COUNT_RES = [r"\bRan (\d+) tests?\b", r"\b(\d+) passed\b", r"test result: \
 TEST_FILE_RE = re.compile(
     r"(^|/)test_[^/]+\.(py|rb)$|_test\.(py|go|rb)$|\.(test|spec)\.(js|jsx|ts|tsx|mjs|cjs)$|_spec\.rb$"
     r"|[^/]Tests?\.(java|kt|cs|fs|vb|php|scala|swift)$|(^|/)tests/[^/]+\.rs$")
+# what makes a test a test, and what switches one off (heuristics for the checker guard and `verify` warnings)
+ASSERT_RE = (r"\bassert\w*|\bexpect\s*\(|\.should\b|\bt\.(Error|Fatal|Fail)\w*\(|\bassertThat\b|\bverify\s*\("
+             r"|\bpanic!?\s*\(|\bself\.fail\(|\bpytest\.raises\b|\bassert_eq!|\bShould\w*\(")
+SKIP_RE = (r"@(unittest\.)?skip\w*|\bunittest\.skip\w*|pytest\.mark\.(skip\w*|xfail)|pytest\.skip\(|\.skip\s*\(|\bxit\s*\("
+           r"|\bxdescribe\s*\(|\bit\.todo\b|\bt\.Skip\w*\(|@Disabled\b|@Ignore\b|#\[ignore\]|\[Ignore\]")
 
 
 def count_tests(h: Harness) -> int | None:
@@ -2956,7 +3063,8 @@ def config_problems(cfg: dict) -> list[str]:
             out.append(f"`{key}` should be a {type(want).__name__}, found {type(value).__name__}")
     for key, allowed in (("scope_guard", ("ask", "deny", "off")), ("instruction_guard", ("ask", "off")),
                          ("guard_failure", ("open", "closed")), ("scope_drift", ("warn", "error")),
-                         ("verify_check", ("quick", "full"))):
+                         ("verify_check", ("quick", "full")), ("trivial_verification", ("refuse", "warn")),
+                         ("checker_guard", ("ask", "off"))):
         if key in cfg and cfg[key] not in allowed:
             out.append(f"`{key}` must be one of {', '.join(allowed)}, found {cfg[key]!r}")
     unknown_hooks = [x for x in cfg.get("hooks_off", []) or [] if x not in HOOK_SWITCH_NAMES.values()]

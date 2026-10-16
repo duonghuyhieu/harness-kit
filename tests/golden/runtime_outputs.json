@@ -168,8 +168,8 @@
   "verify_pass": {
     "rc": 0,
     "out": [
-      "== verify X: \"<PY>\" -c \"print('ok')\"",
-      "ok",
+      "== verify X: \"<PY>\" -c \"assert 1 + 1 == 2\"",
+      "",
       "== verification command passed; running the project-wide quick check to rule out regressions ==",
       "== harness check (quick) @ <SHA> ==",
       "[PASS] rules (<T>s)",
@@ -287,8 +287,8 @@
   "verify_drift_warn": {
     "rc": 0,
     "out": [
-      "== verify X: \"<PY>\" -c \"print('ok')\"",
-      "ok",
+      "== verify X: \"<PY>\" -c \"assert 1 + 1 == 2\"",
+      "",
       "WARNING: 1 changed file(s) outside X's scope ['app/core/*']: app/other.py",
       "  WHY: work outside the active feature is unverified scope creep (WIP=1).",
       "  FIX: revert those changes, or `add` them as a separate feature.",
@@ -359,8 +359,8 @@
   "verify_drift_error": {
     "rc": 1,
     "out": [
-      "== verify X: \"<PY>\" -c \"print('ok')\"",
-      "ok",
+      "== verify X: \"<PY>\" -c \"assert 1 + 1 == 2\"",
+      "",
       "ERROR: 1 changed file(s) outside X's scope ['app/core/*']: app/other.py",
       "  WHY: work outside the active feature is unverified scope creep (WIP=1).",
       "  FIX: revert those changes, or `add` them as a separate feature."
@@ -406,8 +406,8 @@
   "verify_project_check_fails": {
     "rc": 1,
     "out": [
-      "== verify X: \"<PY>\" -c \"print('ok')\"",
-      "ok",
+      "== verify X: \"<PY>\" -c \"assert 1 + 1 == 2\"",
+      "",
       "== verification command passed; running the project-wide quick check to rule out regressions ==",
       "== harness check (quick) @ <SHA> ==",
       "[PASS] rules (<T>s)",
@@ -469,8 +469,8 @@
   "verify_skip_check": {
     "rc": 0,
     "out": [
-      "== verify X: \"<PY>\" -c \"print('ok')\"",
-      "ok",
+      "== verify X: \"<PY>\" -c \"assert 1 + 1 == 2\"",
+      "",
       "[PASS] X → passing. Commit the work, update PROGRESS.md, then run `next`."
     ],
     "features": {

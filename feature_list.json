@@ -932,6 +932,70 @@
       "priority": 13,
       "activated_at": "2026-10-16T10:40:48+07:00",
       "activated_commit": "1382670908e2566b195546c3541cf9ab920cf005"
+    },
+    {
+      "id": "V014",
+      "category": "feature",
+      "behavior": "2.2.0: verify, add and validate refuse a verification command that cannot fail (only echo/true/exit 0/python -c pass; '|| true'; trailing '; exit 0'; a pipe into tail/tee without pipefail); config trivial_verification refuse|warn; verify warns when a named test file has no assertion",
+      "verification": "python -m unittest tests.test_v2.TrivialVerificationTests -q",
+      "status": "passing",
+      "depends_on": [],
+      "evidence": {
+        "verified_at": "2026-10-16T15:24:50+07:00",
+        "commit": "9627446",
+        "command": "python -m unittest tests.test_v2.TrivialVerificationTests -q",
+        "exit_code": 0,
+        "duration_s": 3.5,
+        "project_check": "quick",
+        "output_tail": "----------------------------------------------------------------------\nRan 4 tests in 3.350s\n\nOK"
+      },
+      "scope": [
+        "harness_kit/*",
+        "scripts/harness.py",
+        "tests/*",
+        "package.json",
+        "docs/*",
+        "*.md"
+      ],
+      "priority": 14,
+      "activated_at": "2026-10-16T15:15:22+07:00",
+      "activated_commit": "9627446c8ed291e54399a1e14e57e47a65b06c5a"
+    },
+    {
+      "id": "V015",
+      "category": "feature",
+      "behavior": "2.2.0: the interactive guard denies hook bypasses (git --no-verify, commit -n, core.hooksPath, GIT_CONFIG_* env, claude --safe-mode/--bare, CLAUDE_CONFIG_DIR, disableAllHooks) and asks before edits that weaken the checker (lint/test/CI config, assertions removed or skips added in an existing test file, deleting a test file); config checker_guard ask|off",
+      "verification": "python -m unittest tests.test_v2.CheckerGuardTests -q",
+      "status": "not_started",
+      "depends_on": [],
+      "evidence": null,
+      "scope": [
+        "harness_kit/*",
+        "scripts/harness.py",
+        "tests/*",
+        "package.json",
+        "docs/*",
+        "*.md"
+      ],
+      "priority": 15
+    },
+    {
+      "id": "V016",
+      "category": "feature",
+      "behavior": "2.2.0: verify records a fingerprint of the feature's scope files; status, SessionStart, the compaction snapshot and exit-check list passing features whose scope changed since they last passed (stale), and check --full re-baselines a stale feature whose verification passes again",
+      "verification": "python -m unittest tests.test_v2.StalePassTests -q",
+      "status": "not_started",
+      "depends_on": [],
+      "evidence": null,
+      "scope": [
+        "harness_kit/*",
+        "scripts/harness.py",
+        "tests/*",
+        "package.json",
+        "docs/*",
+        "*.md"
+      ],
+      "priority": 16
     }
   ]
 }
