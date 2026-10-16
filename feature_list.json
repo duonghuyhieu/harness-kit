@@ -1191,6 +1191,35 @@
       "priority": 22,
       "activated_at": "2026-10-16T17:24:51+07:00",
       "activated_commit": "5407b6ef7c2d45aeafeae5bd2787a255a080c3d0"
+    },
+    {
+      "id": "V023",
+      "category": "bug",
+      "behavior": "2.3.1 review round 2: an hk-reviewer APPROVE is authenticated against Claude Code's own subagent transcript (in its projects folder; last message carries the verdict; first message matches a recorded launch, paired oldest-first and used up by every verdict); the guard denies writes into Claude Code's transcripts, any command naming a hook subcommand and executing the dispatcher; every tracked change counts in the review fingerprint; fewer false positives (no-verify only on hooked git subcommands, backups out of .git/hooks, rename as an argument, read-only scripts, reviewer prompts offering all verdicts, echo after set -e)",
+      "verification": "python -m unittest tests.test_v2.ReviewRound2Tests -q",
+      "status": "passing",
+      "depends_on": [],
+      "evidence": {
+        "verified_at": "2026-10-16T18:12:20+07:00",
+        "commit": "584b061",
+        "command": "python -m unittest tests.test_v2.ReviewRound2Tests -q",
+        "exit_code": 0,
+        "duration_s": 13.1,
+        "project_check": "quick",
+        "output_tail": "----------------------------------------------------------------------\nRan 4 tests in 12.504s\n\nOK",
+        "scope_sha256": "18cb92fb26f89250"
+      },
+      "scope": [
+        "harness_kit/*",
+        "scripts/harness.py",
+        "tests/*",
+        "package.json",
+        "docs/*",
+        "*.md"
+      ],
+      "priority": 23,
+      "activated_at": "2026-10-16T18:02:43+07:00",
+      "activated_commit": "584b061b3641154e9919bce6464a15bcc68db61e"
     }
   ]
 }

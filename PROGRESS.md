@@ -57,6 +57,11 @@ _Auto-updated by `harness.py handoff` at 2026-10-16T15:53:07+07:00_
 - [x] 2026-10-16: the independent review returned **VERDICT: REJECT** (1 critical: an agent could forge an APPROVE by
   running the hook command; 5 major; 9 minor). **2.3.1** (V022) fixes every reproduced finding, each with a regression
   test in `ReviewFixTests` (12 tests, all failed on 2.3.0). 150 tests. A second review round of the fix follows.
+- [x] 2026-10-16: review round 2 → **REJECT** again (the forge still worked through `python -c` + a fake transcript;
+  overlapping reviewers mispaired; tracked out-of-scope changes ignored). V023: APPROVE authenticated against Claude
+  Code's own subagent transcript (second probe on 2.1.287 confirmed its content at SubagentStop), launch/verdict
+  pairing, every tracked change counted, fewer false positives; threat model written down in docs/DECISIONS.md.
+  `ReviewRound2Tests` (4, all failing on 584b061). 154 tests. Review round 3 follows. Still local, not pushed.
 
 ## In Progress
 - [ ] (none)

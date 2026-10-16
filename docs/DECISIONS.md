@@ -273,3 +273,24 @@ regression test in `ReviewFixTests`; all 12 failed on 2.3.0 before the fix.
   exhausted-gate incident per session and problem set.
 - Not fixed, documented: the maker still writes the reviewer's prompt (only an explicit verdict in it is refused); the
   shell guard remains a guardrail, not a parser (the gates are `verify` and the review record).
+
+**Review round 2** (same reviewer, 584b061): `VERDICT: REJECT` — 13 of 15 findings fixed, but the forge was still
+possible (`python -c "…harness.main(['hook-subagent-stop'])"` plus any existing file as "transcript"), two overlapping
+reviewers were paired wrongly, and the new scope filter ignored tracked changes outside the scope (an assertion removed
+from a test after the approval). Fixes, each with a regression test in `ReviewRound2Tests` (4 tests, all failing on
+584b061):
+- **Verdicts are authenticated, not only commands blocked.** A second probe (Claude Code 2.1.287) showed that at
+  SubagentStop the subagent's transcript already holds its first user message — exactly the Agent tool's `prompt` —
+  and its final message. An APPROVE now counts only if the transcript lies in Claude Code's projects folder
+  (`~/.claude/projects`, or `$CLAUDE_CONFIG_DIR/projects`), its last message carries the same verdict, and its prompt
+  matches a recorded hk-reviewer launch for the feature that no earlier verdict used (oldest first; every verdict uses
+  up its launch; launches expire after 6 h). The guard denies agent writes into that folder, any command that names a
+  hook subcommand, and executing the dispatcher with an event (reading or staging it is fine).
+- Every changed tracked file counts in the review fingerprint again; only untracked files are limited to the scope.
+- Fewer false positives: `--no-verify` only on git subcommands that run hooks (or through a variable used by one),
+  copying *out of* `.git/hooks`, `rename` as an argument, scripts that only read state files, reviewer prompts that
+  offer APPROVE among other verdicts, a trailing `echo` after `set -e`.
+- **Threat model, stated plainly:** the review record is evidence against *skipping* a review or approving lazily. It
+  is not a security boundary against an agent that writes code to defeat it — an agent that can run arbitrary code on
+  the machine can forge any local evidence. The gates make that a deliberate, multi-step act, and the incident ledger
+  and trace make it visible; the boundary for adversarial agents is the OS sandbox and the human review of the diff.

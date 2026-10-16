@@ -736,10 +736,11 @@ def trivial_verification(cmd: str) -> str | None:
     real = [seg for _, seg in segs if not _NEUTRAL_SEG.match(seg) and not _is_trivial_seg(seg)]
     if not real:
         return "it only prints, changes directory or exits 0, so it passes whatever the code does"
+    errexit = re.search(r"\bset\s+-\w*e|\bset\s+-o\s+errexit|\$ErrorActionPreference\s*=\s*['\"]?Stop", cmd, re.I)
     for k, (sep, seg) in enumerate(segs):
         if sep == "||" and _is_trivial_seg(seg):
             return f"`|| {seg}` turns every failure into a pass"
-        if k == len(segs) - 1 and sep in (";", "\n", "&") and _is_trivial_seg(seg):
+        if k == len(segs) - 1 and sep in (";", "\n", "&") and _is_trivial_seg(seg) and not (errexit and sep != "&"):
             return f"the trailing `{seg}` replaces the exit code of the check before it"
         nested = _NESTED_PAYLOAD.match(seg)
         if nested:
@@ -819,21 +820,22 @@ TEST_ARTEFACTS = (".coverage", "coverage.xml", "junit*.xml", "*.log", ".pytest_c
 
 def review_fingerprint(h: Harness, f: dict) -> str:
     """Content hash of what the feature changed: files changed since its activation commit (committed or not, so a
-    commit between review and verify changes nothing). With a scope, only files in it count (in dot-folders too);
-    harness bookkeeping (`scope_exempt`), generated files and test artefacts (`.coverage`, `junit.xml`…) never do,
-    so running the tests after a review does not void it. A review is valid only for the exact content it saw."""
+    commit between review and verify changes nothing). Every changed *tracked* file counts — a test or conftest edited
+    outside the scope after the review voids it (2.3.1 review, round 2); *untracked* files count only inside the scope
+    (dot-folders included), or all of them without a scope. Harness bookkeeping (`scope_exempt`), generated files and
+    test artefacts (`.coverage`, `junit.xml`…) never count, so running the tests after a review does not void it."""
     exempt = list(h.cfg.get("scope_exempt", []))
     scope = _scope_globs(f)
     base = f.get("activated_commit") or EMPTY_TREE
-    names = set(h.git("-c", "core.quotepath=false", "diff", "--name-only", base).splitlines())
-    names |= set(h.git("-c", "core.quotepath=false", "ls-files", "--others", "--exclude-standard").splitlines())
+    tracked = set(h.git("-c", "core.quotepath=false", "diff", "--name-only", base).splitlines())
+    untracked = set(h.git("-c", "core.quotepath=false", "ls-files", "--others", "--exclude-standard").splitlines())
     digest = hashlib.sha256()
-    for rel in sorted(n for n in names if n and not is_generated(n)):
+    for rel in sorted(n for n in tracked | untracked if n and not is_generated(n)):
         if any(fnmatch.fnmatch(rel, g) for g in exempt) or any(fnmatch.fnmatch(rel, g) or
                                                                fnmatch.fnmatch(rel.rsplit("/", 1)[-1], g)
                                                                for g in TEST_ARTEFACTS):
             continue
-        if scope and not any(fnmatch.fnmatch(rel, g) for g in scope):
+        if rel not in tracked and scope and not any(fnmatch.fnmatch(rel, g) for g in scope):
             continue
         p = h.root / rel
         try:
@@ -2824,10 +2826,14 @@ BYPASS_PATTERNS = [
     (r"\bclaude(\.exe)?\b[^|;&\n]*\s--(safe-mode|bare)\b", "starting Claude Code without its hooks bypasses the harness"),
     (r"(?:^|\s|\$env:)HUSKY\s*=\s*['\"]?0\b", "HUSKY=0 skips the repository's git hooks"),
     (r"(?:^|\s|\$env:)SKIP\s*=\s*\S+.*\bgit\b", "pre-commit's SKIP= skips the repository's hooks"),
-    (r"(?:\b(?:rm|del|erase|rmdir|rd|remove-item|ri|chmod|mv|move|move-item|cp|copy|copy-item|ln|unlink|truncate|tee|"
-     r"set-content|add-content|out-file|new-item)\b|\bsed\s+-\S*i|>)[^|;&\n]*\.git[\\/]+hooks\b",
+    (r"(?:\b(?:rm|del|erase|rmdir|rd|remove-item|ri|chmod|mv|move|move-item|unlink|truncate|tee|set-content|add-content|"
+     r"out-file|new-item)\b|\bsed\s+-\S*i|>)[^|;&\n]*\.git[\\/]+hooks\b",
      "writing, moving or deleting files in .git/hooks switches the repository's git hooks off"),
+    (r"\b(?:cp|copy|copy-item|ln)\b[^|;&\n]*\s\S*\.git[\\/]+hooks\S*\s*$",  # copying INTO .git/hooks (a backup out is fine)
+     "writing files in .git/hooks replaces the repository's git hooks"),
 ]
+# a `git` subcommand that runs hooks, for `--no-verify` given through a variable or anywhere on its line
+_GIT_HOOKED = _GIT_SUB + r"(?:commit|push|merge|rebase|am|cherry-pick|revert|pull|switch|checkout)\b"
 # matched on the raw command (they may sit inside quoted JSON or an echo); disableAllHooks only where it lands in a
 # settings file (2.3.1: a note in docs/ that mentions it is not a bypass)
 BYPASS_RAW_PATTERNS = [
@@ -2836,8 +2842,14 @@ BYPASS_RAW_PATTERNS = [
 ]
 DISABLE_HOOKS_RE = r"[\"']?disableAllHooks[\"']?\s*\]?\s*[:=]\s*\$?true\b"
 SETTINGS_FILE_RE = r"settings(?:\.local)?\.json|\bclaude\s+config\b"
-# hook commands are run by Claude Code with its own payload; an agent running them could forge a verdict (2.3.1)
-HOOK_COMMAND_RE = r"\bharness_hook\.py\b|\bharness\.py\b[^|;&\n]*\s(?:hook-[a-z-]+)\b"
+# hook commands are run by Claude Code with its own payload; an agent running them could forge a verdict (2.3.1). Any
+# mention of a hook subcommand (also through `python -c "...main(['hook-subagent-stop'])"`) or executing the dispatcher
+# with an event; reading or staging the dispatcher file is fine. A guardrail: the SubagentStop record is also verified.
+HOOK_COMMAND_RE = (r"\bhook-(?:subagent-stop|session-start|session-end|stop|guard|activity|precompact|prompt|pretool)\b"
+                   r"|harness_hook\.py[\"']?\s+(?:subagent-stop|session-start|session-end|stop|guard|activity|precompact"
+                   r"|prompt|statusline)\b")
+# Claude Code's own transcripts: the review gate reads them as evidence, so the agent must not write there
+CLAUDE_TRANSCRIPTS_RE = r"\.claude[\\/]+projects\b"
 HOOKSPATH_READ_RE = r"\bgit\b[^|;&\n]*\sconfig\b[^|;&\n]*\s(--get(-all|-regexp)?|--list|-l|--show-origin)\b"
 NESTED_SHELL_RE = (r"(?:\b(?:ba|z|da)?sh|\bcmd|\bpwsh|\bpowershell)(?:\.exe)?(?:\s+-\w+)*?\s+(?:-\w*c|/c|-Command)\s+"
                    r"([\"'])(.*?)\1|\beval\s+([\"'])(.*?)\3")
@@ -2871,12 +2883,20 @@ def _inline_script_writes(command: str, h: Harness) -> bool:
     gates stay `verify` and the loop's integrity check)."""
     if not re.search(r"\b(python3?|py|node)\b[^|;&\n]*(\s-[ce]\b|\s-(?:\s|$)|<<)", command):  # -c, stdin, heredoc
         return False
-    names = [h.cfg["feature_list"]] + sorted(HOOK_STATE_FILES)
+    names = [re.escape(h.cfg["feature_list"])] + [re.escape(n) for n in sorted(HOOK_STATE_FILES)] + [CLAUDE_TRANSCRIPTS_RE]
+    flags = re.I if os.name == "nt" else 0
     text = command.replace("\\", "/")
-    if not any(re.search(re.escape(n), text, re.I if os.name == "nt" else 0) for n in names):
+    write = (r"""open\([^)]*,\s*['"][wax]|write_text|write_bytes|writeFileSync|appendFile|\.write\(|json\.dump\(|"""
+             r"""os\.replace|os\.rename|shutil\.(copy|move)|unlink\(|rmSync|renameSync""")
+    if not any(re.search(n, text, flags) for n in names) or not re.search(write, text):
         return False
-    return bool(re.search(r"""open\([^)]*,\s*['"][wa]|write_text|write_bytes|writeFileSync|appendFile|\.write\(|"""
-                          r"""json\.dump\(|os\.replace|os\.rename|shutil\.(copy|move)|unlink\(|rmSync|renameSync""", text))
+    # a state file named on the line that writes, or held in a variable the script writes through (2.3.1: a script
+    # that only reads .harness/trace.jsonl and writes its own report is fine)
+    for line in text.splitlines():
+        if re.search(write, line) and any(re.search(n, line, flags) for n in names):
+            return True
+    path_var = r"\b\w+\s*=\s*(?:Path\(\s*)?[rbuf]?['\"][^'\"\n]*(?:{})[^'\"\n]*['\"]\s*\)?\s*$"
+    return any(re.search(path_var.format(n), line, flags) for line in text.splitlines() for n in names)
 
 
 def _shell_writes(command: str, target_re: str) -> bool:
@@ -2894,13 +2914,16 @@ def _normalize_shell(text: str) -> str:
 def _bypass_reason(raw: str, scan: str) -> str | None:
     """Why the shell command switches a check off (git hooks, Claude Code hooks), or None. Checked per segment, also
     inside `sh -c "…"` / `eval "…"` payloads; `--no-verify` anywhere in a git command line (e.g. in a variable)."""
-    raw = _normalize_shell(raw)
+    raw = _normalize_shell(raw)  # before the scan text: it turns backslashes into slashes, hiding `\` continuations
     nested = [m[1] or m[3] for m in re.findall(NESTED_SHELL_RE, raw, re.S | re.I)]
-    texts = [_normalize_shell(scan)] + [_shell_scan_text(t) for t in nested]
+    texts = [_shell_scan_text(raw)] + [_shell_scan_text(t) for t in nested]
     for text in texts:
-        if re.search(r"\bgit\b", text) and re.search(r"(?:^|[\s=])--no-veri\w*", text):
+        segs = [seg for _, seg in _split_segments(text)]
+        hooked = [seg for seg in segs if re.search(_GIT_HOOKED, seg, re.I)]
+        if hooked and (any(re.search(r"(?:^|\s)--no-veri\w*", seg) for seg in hooked) or
+                       any(re.search(r"^\s*\w+=['\"]?--no-veri\w*", seg) for seg in segs)):
             return "`--no-verify` skips the repository's git hooks"
-        for _, seg in _split_segments(text):
+        for seg in segs:
             for pattern, why in BYPASS_PATTERNS:
                 if re.search(pattern, seg, re.I) and not ("hookspath" in pattern and re.search(HOOKSPATH_READ_RE, seg, re.I)):
                     return why
@@ -3013,8 +3036,9 @@ def _weakens_checker(h: Harness, rel: str, tool: str, tin: dict) -> str | None:
     return None
 
 
-TEST_DELETE_RE = (r"(?:^|[|;&(\n]|\s)(?:rm|del|erase|rmdir|rd|Remove-Item|ri|git\s+rm|mv|move|Move-Item|ren|rename|"
-                  r"Rename-Item|git\s+mv|sed\s+-\S*i\S*|sed\s+--in-place|perl\s+-\S*i\S*)(?=\s)([^|;&\n]*)")
+TEST_DELETE_RE = (r"(?:^|[|;&(\n]|\b(?:sudo|xargs|env)\s+)\s*(?:rm|del|erase|rmdir|rd|Remove-Item|ri|git\s+rm|mv|move|"
+                  r"Move-Item|ren|rename|Rename-Item|git\s+mv|sed\s+-\S*i\S*|sed\s+--in-place|perl\s+-\S*i\S*)(?=\s)"
+                  r"([^|;&\n]*)")  # in command position only: `pytest -k rename tests/` is not a rename
 
 
 def _deleted_test(scan: str) -> str | None:
@@ -3318,7 +3342,18 @@ def cmd_hook_guard(h: Harness, args) -> int:
                   permissionDecisionReason=f"harness-kit: {bypass}. Switching checks off is the user's action, not the "
                                            f"agent's: ask the user to do it if it is really wanted.")
             return 0
-        rel = _rel_to_root(h, str(tin.get("file_path") or tin.get("notebook_path") or ""))
+        target = str(tin.get("file_path") or tin.get("notebook_path") or "")
+        try:
+            in_transcripts = bool(target) and Path(target).resolve().is_relative_to(_claude_projects_dir().resolve())
+        except (OSError, ValueError, AttributeError):
+            in_transcripts = False
+        if in_transcripts:
+            h.trace("hook-guard", "deny", tool=tool, reason="claude transcripts", session=payload.get("session_id"))
+            _emit("PreToolUse", permissionDecision="deny",
+                  permissionDecisionReason="harness-kit: Claude Code's transcripts are its own record (the review gate "
+                                           "reads them as evidence); they are never written by the agent.")
+            return 0
+        rel = _rel_to_root(h, target)
         if rel is None:
             return 0
         key = _path_key(rel)
@@ -3371,9 +3406,13 @@ def cmd_hook_guard(h: Harness, args) -> int:
         targets += [r"\.harness[\\/]+(?:\.[\\/]+)*" + re.escape(p.split("/", 1)[1]) for p in HOOK_STATE_FILES]
         if re.search(r"\b(?:cd|pushd|set-location|sl)\s+[\"']?\.?[\\/]?\.harness\b", command, re.I):
             targets += [r"(?:^|[\s'\"/\\])" + re.escape(p.rsplit("/", 1)[1]) for p in HOOK_STATE_FILES]
+        targets.append(CLAUDE_TRANSCRIPTS_RE)
         bypass = _bypass_reason(raw_command, command)
         deleted = _deleted_test(command) if h.cfg.get("checker_guard", "ask") == "ask" else None
-        if re.search(HOOK_COMMAND_RE, command, re.I) or re.search(HOOK_COMMAND_RE, raw_command, re.I):
+        read_only = all(re.match(r"(?:grep|rg|ag|findstr|select-string|sls|cat|type|less|more|head|tail|wc|"
+                                 r"git\s+(?:log|show|diff|grep|blame|status))\b", seg, re.I)
+                        for _, seg in _split_segments(_normalize_shell(command)))
+        if not read_only and (re.search(HOOK_COMMAND_RE, command, re.I) or re.search(HOOK_COMMAND_RE, raw_command, re.I)):
             decision, reason = "deny", ("hook commands are run by Claude Code with its own payload; running one by hand "
                                         "could forge a review verdict or session record")
         elif bypass:
@@ -3457,18 +3496,75 @@ def cmd_hook_subagent_stop(h: Harness, args) -> int:
     active = [f for f in h.load_features() if f.get("status") == "active"]
     f = active[0] if active else None
     verdict = parse_verdict(payload.get("last_assistant_message", ""))
-    note = None
-    transcript = str(payload.get("agent_transcript_path") or "")
-    if verdict == "APPROVE" and not (transcript and Path(transcript).is_file()):
-        # Claude Code always sends the subagent's transcript; a payload without one was not written by Claude Code
-        verdict, note = "UNCERTAIN", "no subagent transcript in the hook payload"
-    if verdict == "APPROVE" and f:
-        starts = [r for r in _read_jsonl(h.hdir / "reviews.jsonl") if r.get("kind") == "start" and r.get("feature") == f["id"]]
-        if starts and starts[-1].get("fingerprint") != review_fingerprint(h, f):
-            verdict, note = "UNCERTAIN", "the code changed while the review ran: the approval covers older content"
+    extra: dict = {}
+    start, problem = _authenticate_review(h, f, payload, verdict)
+    if start:  # every verdict uses up its launch, so the next review is paired with its own
+        extra["start"] = start.get("id")
+    if verdict == "APPROVE":
+        if problem:
+            verdict, extra["note"] = "UNCERTAIN", problem
+        elif start and start.get("fingerprint") != review_fingerprint(h, f):
+            verdict, extra["note"] = "UNCERTAIN", "the code changed while the review ran: the approval covers older content"
     record_review(h, f, verdict, "hk-reviewer", session=payload.get("session_id"), agent_id=payload.get("agent_id"),
-                  **({"note": note} if note else {}))
+                  **extra)
     return 0
+
+
+def _claude_projects_dir() -> Path:
+    base = os.environ.get("CLAUDE_CONFIG_DIR")
+    return (Path(base) if base else Path.home() / ".claude") / "projects"
+
+
+def _transcript_texts(path: Path) -> tuple[str, str]:
+    """(first user message, last assistant message) of a Claude Code JSONL transcript."""
+    first, last = "", ""
+    for line in path.read_text(encoding="utf-8", errors="replace").splitlines():
+        try:
+            e = json.loads(line)
+        except ValueError:
+            continue
+        msg = e.get("message") if isinstance(e, dict) and isinstance(e.get("message"), dict) else {}
+        content = msg.get("content")
+        text = content if isinstance(content, str) else " ".join(
+            str(b.get("text", "")) for b in content or [] if isinstance(b, dict) and b.get("type") == "text")
+        if e.get("type") == "user" and not first and text:
+            first = text
+        elif e.get("type") == "assistant" and text:
+            last = text
+    return first, last
+
+
+def _authenticate_review(h: Harness, f: dict | None, payload: dict, verdict: str = "APPROVE") -> tuple[dict | None, str | None]:
+    """An APPROVE counts only when Claude Code's own transcript of the reviewer backs it (2.3.1, review round 2): the
+    transcript lies in Claude Code's projects folder, its last assistant message carries the same verdict, and its first
+    user message is the prompt of a recorded hk-reviewer launch for this feature that no earlier verdict used (oldest
+    first, so overlapping reviewers are paired with their own launch). Checked on Claude Code 2.1.287: at SubagentStop
+    the subagent's transcript already holds both messages. Returns (the matched launch, problem)."""
+    raw = str(payload.get("agent_transcript_path") or "")
+    if not raw:
+        return None, "no subagent transcript in the hook payload"
+    path = Path(raw)
+    try:
+        inside = path.resolve().is_relative_to(_claude_projects_dir().resolve())
+    except (OSError, ValueError, AttributeError):
+        inside = False
+    if not inside or path.suffix != ".jsonl" or not path.is_file():
+        return None, "the transcript is not a Claude Code subagent transcript"
+    first, last = _transcript_texts(path)
+    problem = None
+    if parse_verdict(last) != verdict:
+        problem = f"the transcript's last message does not carry the {verdict}"
+    if not f:
+        return None, problem
+    recs = _read_jsonl(h.hdir / "reviews.jsonl")
+    used = {r.get("start") for r in recs if r.get("kind") != "start" and r.get("start")}
+    digest = hashlib.sha256(first.strip().encode("utf-8")).hexdigest()[:16]
+    recent = time.time() - 6 * 3600  # a launch whose reviewer never reported back must not pair with a later run forever
+    starts = [r for r in recs if r.get("kind") == "start" and r.get("feature") == f["id"] and r.get("id") not in used
+              and r.get("prompt_sha256") == digest and float(r.get("epoch") or 0) >= recent]
+    if not starts:
+        return None, problem or "no recorded hk-reviewer launch matches this transcript's prompt"
+    return starts[0], problem
 
 
 def _guard_subagent(h: Harness, tin: dict, payload: dict) -> tuple[str | None, str | None]:
@@ -3478,13 +3574,17 @@ def _guard_subagent(h: Harness, tin: dict, payload: dict) -> tuple[str | None, s
     if not (agent == "hk-reviewer" or agent.endswith(":hk-reviewer")):
         return None, None
     prompt = str(tin.get("prompt") or "")
-    if re.search(r"verdict\W{0,4}approve|\b(?:answer|reply|respond|return|say|output|end with|conclude)\b[^.\n]{0,40}"
-                 r"\bapprove\b", prompt, re.I):
-        return "deny", ("the reviewer's verdict must not be dictated in its prompt: describe the feature and the change, "
-                        "and let hk-reviewer judge")
+    for m in re.finditer(r"verdict\W{0,4}approve|\b(?:answer|reply|respond|return|say|output|end with|conclude)\b"
+                         r"[^.\n]{0,40}\bapprove\b", prompt, re.I):
+        around = prompt[max(0, m.start() - 40): m.end() + 60]
+        if not re.search(r"reject|uncertain|\bfail\b|\|", around, re.I):  # APPROVE offered as the only answer
+            return "deny", ("the reviewer's verdict must not be dictated in its prompt: describe the feature and the "
+                            "change, and let hk-reviewer judge")
     active = [f for f in h.load_features() if f.get("status") == "active"]
     if active:
         rec = {"ts": now_iso(), "epoch": time.time(), "kind": "start", "feature": active[0]["id"],
+               "id": str(payload.get("tool_use_id") or f"start-{time.time()}"),
+               "prompt_sha256": hashlib.sha256(prompt.strip().encode("utf-8")).hexdigest()[:16],
                "fingerprint": review_fingerprint(h, active[0]), "session": payload.get("session_id")}
         with (h.hdir / "reviews.jsonl").open("a", encoding="utf-8") as fh:
             fh.write(json.dumps(rec, ensure_ascii=False) + "\n")
